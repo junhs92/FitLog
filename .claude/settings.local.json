@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(test:*)",
+      "Bash(cat:*)",
+      "Bash(where:*)",
+      "Bash(find:*)",
+      "Bash(claude mcp list:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enableAllProjectMcpServers": true
+}

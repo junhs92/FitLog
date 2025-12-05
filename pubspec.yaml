@@ -1,0 +1,82 @@
+name: fitlog_pro_app
+description: FitLog Pro - AI-powered personal training management platform
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.1
+
+  # State Management
+  flutter_riverpod: ^2.4.10
+  riverpod_annotation: ^2.3.4
+
+  # Navigation
+  go_router: ^13.0.1
+
+  # Backend & Database
+  supabase_flutter: ^2.2.0
+  drift: ^2.14.1
+  drift_flutter: ^0.1.0
+
+  # Data Classes & JSON
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.8.1
+
+  # HTTP & API
+  dio: ^5.4.1
+
+  # Voice Input
+  speech_to_text: ^6.6.0
+  permission_handler: ^11.3.0
+
+  # Utilities
+  intl: ^0.19.0
+  logger: ^2.0.2+1
+  path_provider: ^2.1.2
+  shared_preferences: ^2.2.2
+
+  # Error Handling
+  dartz: ^0.10.1
+
+  # Haptic Feedback (built into Flutter)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Linting
+  flutter_lints: ^5.0.0
+
+  # Code Generation
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.11
+  freezed: ^2.4.7
+  json_serializable: ^6.7.1
+  drift_dev: ^2.14.1
+
+  # Testing
+  mockito: ^5.4.4
+  mocktail: ^1.0.3
+
+flutter:
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/icons/
+    - assets/images/
+    - assets/animations/
+
+  # Fonts will use Google Fonts dynamically
+  # No need to include font files
