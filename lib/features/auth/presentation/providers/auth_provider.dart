@@ -54,6 +54,9 @@ enum AuthStatus {
   error,
 }
 
+/// Sentinel value to distinguish between "not provided" and "explicitly set to null"
+const _undefined = Object();
+
 class AuthState {
   final AuthStatus status;
   final UserEntity? user;
@@ -67,13 +70,13 @@ class AuthState {
 
   AuthState copyWith({
     AuthStatus? status,
-    UserEntity? user,
-    String? errorMessage,
+    Object? user = _undefined,
+    Object? errorMessage = _undefined,
   }) {
     return AuthState(
       status: status ?? this.status,
-      user: user ?? this.user,
-      errorMessage: errorMessage ?? this.errorMessage,
+      user: user == _undefined ? this.user : user as UserEntity?,
+      errorMessage: errorMessage == _undefined ? this.errorMessage : errorMessage as String?,
     );
   }
 

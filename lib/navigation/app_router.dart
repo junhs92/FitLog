@@ -6,6 +6,9 @@ import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/splash_screen.dart';
 import '../features/auth/presentation/providers/auth_provider.dart';
+import '../features/client_management/presentation/screens/add_client_screen.dart';
+import '../features/client_management/presentation/screens/client_detail_screen.dart';
+import '../features/client_management/presentation/screens/clients_list_screen.dart';
 import '../shared/models/user_role.dart';
 import 'routes.dart';
 
@@ -77,7 +80,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.trainerClients,
             name: RouteNames.trainerClients,
-            builder: (context, state) => const TrainerClientsPlaceholder(),
+            builder: (context, state) => const ClientsListScreen(),
           ),
           GoRoute(
             path: Routes.trainerAcademy,
@@ -90,6 +93,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const TrainerProfilePlaceholder(),
           ),
         ],
+      ),
+
+      // Trainer client management routes (full page, no bottom nav)
+      GoRoute(
+        path: Routes.trainerClientAdd,
+        name: RouteNames.trainerClientAdd,
+        builder: (context, state) => const AddClientScreen(),
+      ),
+      GoRoute(
+        path: Routes.trainerClientDetail,
+        name: RouteNames.trainerClientDetail,
+        builder: (context, state) {
+          final clientId = state.pathParameters['id']!;
+          return ClientDetailScreen(clientId: clientId);
+        },
       ),
 
       // Client routes (shell for bottom navigation)
@@ -210,13 +228,6 @@ class TrainerHomePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const Center(child: Text('Trainer Home'));
-}
-
-class TrainerClientsPlaceholder extends StatelessWidget {
-  const TrainerClientsPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Trainer Clients'));
 }
 
 class TrainerAcademyPlaceholder extends StatelessWidget {

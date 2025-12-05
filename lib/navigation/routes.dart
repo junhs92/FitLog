@@ -11,6 +11,7 @@ class Routes {
   // Trainer routes
   static const String trainerHome = '/trainer';
   static const String trainerClients = '/trainer/clients';
+  static const String trainerClientAdd = '/trainer/clients/add';
   static const String trainerClientDetail = '/trainer/clients/:id';
   static const String trainerSession = '/trainer/session/:clientId';
   static const String trainerProgram = '/trainer/program/:clientId';
@@ -40,6 +41,7 @@ class RouteNames {
 
   static const String trainerHome = 'trainerHome';
   static const String trainerClients = 'trainerClients';
+  static const String trainerClientAdd = 'trainerClientAdd';
   static const String trainerClientDetail = 'trainerClientDetail';
   static const String trainerSession = 'trainerSession';
   static const String trainerProgram = 'trainerProgram';
