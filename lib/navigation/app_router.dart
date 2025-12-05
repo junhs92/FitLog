@@ -9,6 +9,7 @@ import '../features/auth/presentation/providers/auth_provider.dart';
 import '../features/client_management/presentation/screens/add_client_screen.dart';
 import '../features/client_management/presentation/screens/client_detail_screen.dart';
 import '../features/client_management/presentation/screens/clients_list_screen.dart';
+import '../features/trainer_home/presentation/screens/trainer_home_screen.dart';
 import '../shared/models/user_role.dart';
 import 'routes.dart';
 
@@ -75,7 +76,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.trainerHome,
             name: RouteNames.trainerHome,
-            builder: (context, state) => const TrainerHomePlaceholder(),
+            builder: (context, state) => const TrainerHomeScreen(),
           ),
           GoRoute(
             path: Routes.trainerClients,
@@ -223,13 +224,6 @@ class ClientShell extends StatelessWidget {
 }
 
 // Placeholder screens - will be replaced with actual implementations
-class TrainerHomePlaceholder extends StatelessWidget {
-  const TrainerHomePlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Trainer Home'));
-}
-
 class TrainerAcademyPlaceholder extends StatelessWidget {
   const TrainerAcademyPlaceholder({super.key});
 
