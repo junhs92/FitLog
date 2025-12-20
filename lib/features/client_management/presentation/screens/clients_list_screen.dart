@@ -6,6 +6,8 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
+import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
+import '../../../trainer_home/presentation/providers/trainer_home_provider.dart';
 import '../providers/client_provider.dart';
 import '../widgets/client_card.dart';
 
@@ -85,7 +87,14 @@ class ClientsListScreen extends ConsumerWidget {
                           context.push('/trainer/clients/${client.id}');
                         },
                         onSessionTap: () {
-                          context.push('/trainer/session/${client.id}');
+                          final trainerIdAsync = ref.read(trainerIdProvider);
+                          final trainerId = trainerIdAsync.valueOrNull ?? '';
+                          ProgramSelectionSheet.show(
+                            context: context,
+                            clientId: client.id,
+                            clientName: client.name,
+                            trainerId: trainerId,
+                          );
                         },
                       );
                     },

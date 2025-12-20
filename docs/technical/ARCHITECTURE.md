@@ -454,50 +454,117 @@ The workout session recording system is the core feature of FitLog Pro. This sec
 
 #### 1. Entry Points
 
-There are two ways to start a workout session:
+The session start flow follows a 3-step process:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         SESSION ENTRY POINTS                             │
+│                    SESSION START FLOW (3 Steps)                          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  ┌─────────────────────┐          ┌─────────────────────┐              │
-│  │  CLIENT DETAIL      │          │  AI PROGRAM         │              │
-│  │  "Start Session"    │          │  "Start Workout"    │              │
-│  │  (Empty session)    │          │  (Pre-loaded)       │              │
-│  └──────────┬──────────┘          └──────────┬──────────┘              │
-│             │                                 │                         │
-│             │    startSession(clientId)       │  startSessionWithProgram│
-│             │                                 │  (clientId, programId,  │
-│             │                                 │   workoutDayId)         │
-│             │                                 │                         │
-│             └─────────────┬───────────────────┘                         │
-│                           ▼                                             │
-│             ┌─────────────────────────┐                                 │
-│             │   ActiveSessionScreen   │                                 │
-│             │   /trainer/session/:id  │                                 │
-│             └─────────────────────────┘                                 │
+│  STEP 1: Trigger                                                        │
+│  ┌─────────────────────┐   ┌─────────────────────┐                     │
+│  │  TRAINER HOME       │   │  CLIENT LIST        │                     │
+│  │  "Start Session"    │   │  Play button (▶)    │                     │
+│  │  QuickActionsCard   │   │  on ClientCard      │                     │
+│  └──────────┬──────────┘   └──────────┬──────────┘                     │
+│             │                         │                                 │
+│             └────────────┬────────────┘                                 │
+│                          ▼                                              │
+│  STEP 2: Client Selection                                               │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Client Selection Bottom Sheet                                   │   │
+│  │  "클라이언트 선택" (Select Client)                               │   │
+│  │                                                                   │   │
+│  │  [Client A]  [Client B]  [Client C] ...                          │   │
+│  │  [전체 클라이언트 보기]                                          │   │
+│  └──────────────────────────┬──────────────────────────────────────┘   │
+│                              ▼                                          │
+│  STEP 3: Program Selection (ProgramSelectionSheet)                      │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  "세션 시작" (Start Session) - {Client Name}                     │   │
+│  │                                                                   │   │
+│  │  ┌───────────────────────────────────────────────────────────┐  │   │
+│  │  │ 🧠 AI 세션 생성                                            │  │   │
+│  │  │    새로운 AI 기반 운동 프로그램 생성                       │  │   │
+│  │  └───────────────────────────────────────────────────────────┘  │   │
+│  │                                                                   │   │
+│  │  ┌───────────────────────────────────────────────────────────┐  │   │
+│  │  │ ➕ 빈 세션 시작                                            │  │   │
+│  │  │    운동을 직접 추가하며 진행                               │  │   │
+│  │  └───────────────────────────────────────────────────────────┘  │   │
+│  │                                                                   │   │
+│  │  이전 프로그램으로 시작:                                         │   │
+│  │  ┌───────────────────────────────────────────────────────────┐  │   │
+│  │  │ [Program 1] [Program 2] [Program 3] ...                    │  │   │
+│  │  └───────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────┬──────────────────────────────────────┘   │
+│                              │                                          │
+│         ┌────────────────────┼────────────────────┐                    │
+│         ▼                    ▼                    ▼                     │
+│  ┌─────────────┐     ┌─────────────┐     ┌─────────────────┐           │
+│  │ AI Program  │     │ Empty       │     │ Previous        │           │
+│  │ Generation  │     │ Session     │     │ Program         │           │
+│  └──────┬──────┘     └──────┬──────┘     └────────┬────────┘           │
+│         │                   │                     │                     │
+│         │                   │ startSession()      │ startSessionWith    │
+│         │                   │                     │ Program()           │
+│         ▼                   └──────────┬──────────┘                     │
+│  ┌─────────────┐                       ▼                                │
+│  │ Generate    │            ┌─────────────────────────┐                │
+│  │ Program     │            │   ActiveSessionScreen   │                │
+│  │ Screen      │            │   /trainer/session/:id  │                │
+│  └─────────────┘            └─────────────────────────┘                │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Route:** `/trainer/session/:clientId`
 
-**Entry A - From Client Detail:**
+**Entry Points:**
+
+| Source | Location | Action |
+|--------|----------|--------|
+| Trainer Home | QuickActionsCard "Start Session" | `_showClientSelectionForSession()` |
+| Client List | ClientCard play button | `ProgramSelectionSheet.show()` |
+| Client Detail | "세션 시작" FAB | `ProgramSelectionSheet.show()` |
+
+**Code Flow - From Trainer Home:**
 ```dart
-// ClientDetailScreen → QuickActionsCard
-context.push('/trainer/session/${client.id}');
+// trainer_home_screen.dart:93-95
+onStartSession: () {
+  _showClientSelectionForSession(context, ref, data.recentClients);
+}
+
+// After client selection (line 226-234)
+onTap: () {
+  Navigator.pop(ctx);
+  ProgramSelectionSheet.show(
+    context: context,
+    clientId: client.id,
+    clientName: client.name,
+    trainerId: trainerId,
+  );
+}
 ```
 
-**Entry B - From AI Program:**
+**Code Flow - From Client List / Client Detail:**
 ```dart
-// ProgramReviewScreen → Start button
-await notifier.startSessionWithProgram(
-  clientId: clientId,
-  programId: program.id,
-  workoutDayId: selectedDay.id,
+// clients_list_screen.dart / client_detail_screen.dart
+ProgramSelectionSheet.show(
+  context: context,
+  clientId: client.id,
+  clientName: client.name,
+  trainerId: trainerId,
 );
 ```
+
+**ProgramSelectionSheet Options:**
+
+| Option | Method | Result |
+|--------|--------|--------|
+| AI 세션 생성 | Navigate to `/trainer/program/generate/:clientId` | Generate new AI program |
+| 빈 세션 시작 | `_startEmptySession()` | Start session without exercises |
+| 이전 프로그램 | `startSessionWithProgram()` | Start with pre-loaded exercises |
 
 ---
 
@@ -1000,6 +1067,17 @@ CREATE TABLE exercises (
 ---
 
 #### 10. Key File References
+
+**Entry Point Files:**
+
+| File | Purpose |
+|------|---------|
+| `lib/features/trainer_home/presentation/screens/trainer_home_screen.dart` | Start Session trigger, client selection |
+| `lib/features/client_management/presentation/screens/clients_list_screen.dart` | Client list with session quick action |
+| `lib/features/client_management/presentation/screens/client_detail_screen.dart` | Client detail with session FAB |
+| `lib/features/active_session/presentation/widgets/program_selection_sheet.dart` | Program selection (AI/Empty/Previous) |
+
+**Session Core Files:**
 
 | File | Purpose |
 |------|---------|
