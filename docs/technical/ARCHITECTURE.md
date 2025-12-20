@@ -446,44 +446,574 @@ class ClientRemoteDataSource {
 
 ## Data Flow
 
-### Example: Starting a Session
+### Session Workflow - Complete App Flow
+
+The workout session recording system is the core feature of FitLog Pro. This section documents the complete user journey from starting a session to completion.
+
+---
+
+#### 1. Entry Points
+
+There are two ways to start a workout session:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  UI: ActiveSessionScreen                                │
-│  User taps "Start Session"                              │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Provider: sessionNotifier.startSession(clientId)       │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  UseCase: StartSessionUseCase.call(clientId, trainerId) │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Repository: SessionRepositoryImpl.startSession()       │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  DataSource: Supabase INSERT → sessions table           │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Return: Either<Failure, SessionEntity>                 │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Provider updates state → UI rebuilds                   │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SESSION ENTRY POINTS                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────┐          ┌─────────────────────┐              │
+│  │  CLIENT DETAIL      │          │  AI PROGRAM         │              │
+│  │  "Start Session"    │          │  "Start Workout"    │              │
+│  │  (Empty session)    │          │  (Pre-loaded)       │              │
+│  └──────────┬──────────┘          └──────────┬──────────┘              │
+│             │                                 │                         │
+│             │    startSession(clientId)       │  startSessionWithProgram│
+│             │                                 │  (clientId, programId,  │
+│             │                                 │   workoutDayId)         │
+│             │                                 │                         │
+│             └─────────────┬───────────────────┘                         │
+│                           ▼                                             │
+│             ┌─────────────────────────┐                                 │
+│             │   ActiveSessionScreen   │                                 │
+│             │   /trainer/session/:id  │                                 │
+│             └─────────────────────────┘                                 │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Route:** `/trainer/session/:clientId`
+
+**Entry A - From Client Detail:**
+```dart
+// ClientDetailScreen → QuickActionsCard
+context.push('/trainer/session/${client.id}');
+```
+
+**Entry B - From AI Program:**
+```dart
+// ProgramReviewScreen → Start button
+await notifier.startSessionWithProgram(
+  clientId: clientId,
+  programId: program.id,
+  workoutDayId: selectedDay.id,
+);
+```
+
+---
+
+#### 2. Session Initialization
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      SESSION INITIALIZATION                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   ActiveSessionScreen.initState()                                       │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────┐                           │
+│   │ notifier.loadActiveSession(clientId)   │  ← Check for existing     │
+│   └────────────────────┬───────────────────┘                           │
+│                        │                                                │
+│            ┌───────────┴───────────┐                                   │
+│            ▼                       ▼                                    │
+│   ┌────────────────┐     ┌─────────────────────┐                       │
+│   │ Session Found  │     │ No Active Session   │                       │
+│   │ (Resume)       │     │ (Start New)         │                       │
+│   └───────┬────────┘     └──────────┬──────────┘                       │
+│           │                         │                                   │
+│           │                         ▼                                   │
+│           │              ┌───────────────────────────────┐             │
+│           │              │ notifier.startSession(        │             │
+│           │              │   clientId: clientId,         │             │
+│           │              │   sessionType: 'training'     │             │
+│           │              │ )                             │             │
+│           │              └──────────────┬────────────────┘             │
+│           │                             │                               │
+│           └─────────────┬───────────────┘                               │
+│                         ▼                                               │
+│           ┌─────────────────────────────────┐                          │
+│           │ _initializeFromFirstExercise()  │  ← Set weight/reps/RPE   │
+│           └─────────────────────────────────┘                          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Database Operations:**
+```sql
+-- Create new session
+INSERT INTO sessions (trainer_id, client_id, status, session_type, started_at)
+VALUES ($1, $2, 'active', 'training', NOW());
+
+-- If from AI program, auto-populate exercises
+INSERT INTO session_exercises (session_id, exercise_id, program_exercise_id, order_index)
+SELECT $sessionId, exercise_id, id, order_index
+FROM program_exercises WHERE workout_day_id = $workoutDayId;
+```
+
+---
+
+#### 3. Main Session UI Structure
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ACTIVE SESSION SCREEN                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  AppBar                                                          │   │
+│  │  ┌──────────────┐  ┌───────────────┐  ┌──────────┐             │   │
+│  │  │ Client Name  │  │ Rest Timer    │  │ [Finish] │             │   │
+│  │  │ Session Timer│  │ (Compact)     │  │          │             │   │
+│  │  └──────────────┘  └───────────────┘  └──────────┘             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Exercise Tabs (Horizontal Scroll)                               │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │   │
+│  │  │ Squat ✓ │ │ Bench ● │ │ Deadlift│ │ Row     │               │   │
+│  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘               │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Main Content (Scrollable)                                       │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Exercise Name                          │                    │   │
+│  │  │  "Barbell Bench Press"                  │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  AI Difficulty Feedback                 │                    │   │
+│  │  │  [Too Easy] [Just Right] [Too Hard]     │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Sets History                           │                    │   │
+│  │  │  Set 1: 80kg x 10 @ RPE 7               │                    │   │
+│  │  │  Set 2: 80kg x 10 @ RPE 8               │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Weight Adjuster    [-] 80.0 kg [+]     │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Rep Selector                           │                    │   │
+│  │  │  [6] [7] [8] [9] [10] [11] [12]         │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  RPE Slider (optional)     ●────── 8    │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Tags: [Warmup] [Drop Set] [PR]         │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  Quick Log: [Repeat Last: 80kg x 10]    │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  │  ┌─────────────────────────────────────────┐                    │   │
+│  │  │  ████████ SET COMPLETE ████████         │                    │   │
+│  │  └─────────────────────────────────────────┘                    │   │
+│  │                                                                   │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  FAB: [+ Exercise]                                               │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 4. Set Logging Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SET LOGGING FLOW                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   User Action: Tap "Set Complete" or "Repeat Last Set"                  │
+│                        │                                                │
+│                        ▼                                                │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  HapticFeedback.mediumImpact()                                 │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                        │                                                │
+│                        ▼                                                │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Provider: activeSessionProvider.notifier.logSet()             │   │
+│   │                                                                 │   │
+│   │  Parameters:                                                    │   │
+│   │  - sessionExerciseId: current exercise ID                       │   │
+│   │  - setNumber: currentSetNumber (auto-incremented)               │   │
+│   │  - weight: state.currentWeight                                  │   │
+│   │  - reps: state.currentReps                                      │   │
+│   │  - rpe: state.currentRpe (optional)                             │   │
+│   │  - tags: state.currentTags                                      │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                        │                                                │
+│                        ▼                                                │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Repository: sessionRepository.logSet(...)                      │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                        │                                                │
+│                        ▼                                                │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  DataSource: Update JSONB 'sets' column                        │   │
+│   │                                                                 │   │
+│   │  1. Fetch current sets from session_exercises                   │   │
+│   │  2. Create new set object with timestamp                        │   │
+│   │  3. Append to sets array                                        │   │
+│   │  4. UPDATE session_exercises SET sets = $newSets                │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                        │                                                │
+│              ┌─────────┴─────────┐                                     │
+│              ▼                   ▼                                      │
+│   ┌──────────────────┐  ┌──────────────────┐                          │
+│   │  SUCCESS         │  │  FAILURE         │                          │
+│   └────────┬─────────┘  └────────┬─────────┘                          │
+│            │                     │                                      │
+│            ▼                     ▼                                      │
+│   ┌──────────────────┐  ┌──────────────────┐                          │
+│   │ Update local     │  │ Show error       │                          │
+│   │ state with new   │  │ message          │                          │
+│   │ set              │  └──────────────────┘                          │
+│   └────────┬─────────┘                                                 │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Start Rest Timer                                               │   │
+│   │  restTimerProvider.notifier.startTimer()                        │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Show Rest Timer Bottom Sheet                                   │   │
+│   │  - "Set X complete!" confirmation                               │   │
+│   │  - Countdown timer (default: 90 seconds)                        │   │
+│   │  - [Skip Rest] / [Continue] buttons                             │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Set Data Structure (JSONB):**
+```json
+{
+  "id": "set_1734567890123",
+  "session_exercise_id": "uuid",
+  "set_number": 1,
+  "weight": 80.0,
+  "reps": 10,
+  "rpe": 8.0,
+  "tags": ["working_set"],
+  "notes": null,
+  "completed_at": "2024-12-20T10:30:00Z"
+}
+```
+
+---
+
+#### 5. Exercise Navigation
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      EXERCISE NAVIGATION                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Exercise Tabs                                                   │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │   │
+│  │  │ Squat ✓ │ │ Bench ● │ │ Deadlift│ │ Row     │               │   │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘               │   │
+│  │       │           │           │           │                      │   │
+│  │  Completed   Current     Pending      Pending                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  User taps exercise tab                                                 │
+│           │                                                             │
+│           ▼                                                             │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  notifier.goToExercise(index)                                    │   │
+│  │                                                                   │   │
+│  │  1. Get exercise at index                                        │   │
+│  │  2. Initialize weight/reps/RPE:                                  │   │
+│  │     - Priority 1: Last set of this exercise                      │   │
+│  │     - Priority 2: AI recommended targets (from program)          │   │
+│  │     - Priority 3: Defaults (20kg, 10 reps)                       │   │
+│  │  3. Update currentExerciseIndex                                  │   │
+│  │  4. Clear current tags                                           │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  Adding New Exercise                                             │   │
+│  │                                                                   │   │
+│  │  [+ Exercise] FAB → ExercisePickerSheet                          │   │
+│  │      │                                                           │   │
+│  │      ├── Search field (name/Korean name)                         │   │
+│  │      ├── Recent exercises for this client                        │   │
+│  │      └── Full exercise library                                   │   │
+│  │                                                                   │   │
+│  │  On selection:                                                   │   │
+│  │  notifier.addExercise(exercise)                                  │   │
+│  │  → INSERT INTO session_exercises                                 │   │
+│  │  → Jump to new exercise tab                                      │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 6. Rest Timer System
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         REST TIMER SYSTEM                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │  RestTimerProvider (StateNotifier)                            │     │
+│  │                                                                │     │
+│  │  State:                                                        │     │
+│  │  - remainingSeconds: int                                       │     │
+│  │  - isRunning: bool                                             │     │
+│  │  - defaultDuration: 90 seconds                                 │     │
+│  │                                                                │     │
+│  │  Actions:                                                      │     │
+│  │  - startTimer(duration?)                                       │     │
+│  │  - pauseTimer()                                                │     │
+│  │  - resumeTimer()                                               │     │
+│  │  - skipTimer()                                                 │     │
+│  │  - adjustTime(seconds) // +15, -15                             │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+│  Display Modes:                                                         │
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────┐     │
+│  │  Compact (AppBar)                     Full (Bottom Sheet)      │     │
+│  │  ┌─────────────┐                     ┌─────────────────────┐  │     │
+│  │  │ 🔔 1:23     │                     │     ⏱️ 1:23         │  │     │
+│  │  └─────────────┘                     │                     │  │     │
+│  │                                       │  [-15s] [▶️] [+15s]  │  │     │
+│  │                                       │                     │  │     │
+│  │                                       │  Presets:           │  │     │
+│  │                                       │  [60s] [90s] [120s] │  │     │
+│  │                                       └─────────────────────┘  │     │
+│  └───────────────────────────────────────────────────────────────┘     │
+│                                                                         │
+│  Timer Completion:                                                      │
+│  - Vibration notification                                               │
+│  - Audio alert (optional)                                               │
+│  - Visual indicator changes                                             │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 7. Session Completion Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      SESSION COMPLETION                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   User taps "Finish" button                                             │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Confirmation Dialog                                            │   │
+│   │  "Complete Session?"                                            │   │
+│   │  "Are you sure you want to finish this session?"                │   │
+│   │                                                                 │   │
+│   │  [Cancel]                    [Complete]                         │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│            │                                                            │
+│            ▼ (on confirm)                                               │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  notifier.completeSession()                                     │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Repository: completeSession(sessionId)                         │   │
+│   │                                                                 │   │
+│   │  1. Calculate duration (now - startedAt)                        │   │
+│   │  2. UPDATE sessions SET                                         │   │
+│   │       status = 'completed',                                     │   │
+│   │       completed_at = NOW(),                                     │   │
+│   │       duration_seconds = $duration                              │   │
+│   │     WHERE id = $sessionId                                       │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  Navigate to Session Summary                                    │   │
+│   │  context.go('/trainer/session-summary/${session.id}')           │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│            │                                                            │
+│            ▼                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │  SessionSummaryScreen                                           │   │
+│   │                                                                 │   │
+│   │  ┌─────────────────────────────────────────────────────────┐   │   │
+│   │  │  Session Stats                                          │   │   │
+│   │  │  - Duration: 1h 23m                                     │   │   │
+│   │  │  - Exercises: 5                                         │   │   │
+│   │  │  - Total Sets: 18                                       │   │   │
+│   │  │  - Total Volume: 12,450 kg                              │   │   │
+│   │  │  - PRs: 2                                               │   │   │
+│   │  └─────────────────────────────────────────────────────────┘   │   │
+│   │                                                                 │   │
+│   │  ┌─────────────────────────────────────────────────────────┐   │   │
+│   │  │  Exercise Breakdown (per exercise stats)                │   │   │
+│   │  └─────────────────────────────────────────────────────────┘   │   │
+│   │                                                                 │   │
+│   │  ┌─────────────────────────────────────────────────────────┐   │   │
+│   │  │  Actions                                                │   │   │
+│   │  │  [Generate AI Report] [Share] [Done]                    │   │   │
+│   │  └─────────────────────────────────────────────────────────┘   │   │
+│   │                                                                 │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 8. State Management Summary
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      PROVIDER ARCHITECTURE                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  activeSessionProvider (StateNotifierProvider)                   │   │
+│  │                                                                   │   │
+│  │  State: ActiveSessionState                                        │   │
+│  │  ├── session: SessionEntity?                                      │   │
+│  │  ├── currentExerciseIndex: int                                    │   │
+│  │  ├── isLoading: bool                                              │   │
+│  │  ├── error: String?                                               │   │
+│  │  ├── currentWeight: double (default: 20.0)                        │   │
+│  │  ├── currentReps: int (default: 10)                               │   │
+│  │  ├── currentRpe: double?                                          │   │
+│  │  ├── currentTags: List<SetTag>                                    │   │
+│  │  └── lastLoggedSet: ExerciseSetEntity?                            │   │
+│  │                                                                   │   │
+│  │  Computed:                                                        │   │
+│  │  ├── hasActiveSession: bool                                       │   │
+│  │  ├── currentExercise: SessionExerciseEntity?                      │   │
+│  │  ├── currentSetNumber: int                                        │   │
+│  │  ├── canRepeatLastSet: bool                                       │   │
+│  │  └── lastSetOfCurrentExercise: ExerciseSetEntity?                 │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  restTimerProvider (StateNotifierProvider)                       │   │
+│  │                                                                   │   │
+│  │  State: RestTimerState                                            │   │
+│  │  ├── remainingSeconds: int                                        │   │
+│  │  ├── isRunning: bool                                              │   │
+│  │  └── defaultDuration: int                                         │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  exerciseLibraryProvider (FutureProvider.family)                 │   │
+│  │  - Fetches exercises with optional search query                  │   │
+│  │  - Includes default + trainer's custom exercises                 │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  recentExercisesProvider (FutureProvider.family)                 │   │
+│  │  - Fetches client's recently used exercises                      │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │  sessionFeedbackProvider (StateNotifierProvider)                 │   │
+│  │  - Tracks difficulty feedback during session                     │   │
+│  │  - Suggests exercise alternatives based on feedback              │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 9. Database Schema
+
+```sql
+-- Core tables for session workflow
+
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trainer_id UUID REFERENCES accounts(id),
+  client_id UUID REFERENCES accounts(id),
+  program_id UUID REFERENCES workout_programs(id),      -- Optional: AI program link
+  workout_day_id UUID REFERENCES program_workout_days(id), -- Optional: specific day
+  status TEXT CHECK (status IN ('scheduled', 'active', 'completed', 'cancelled')),
+  session_type TEXT DEFAULT 'training',
+  notes TEXT,
+  overall_rating INTEGER CHECK (overall_rating BETWEEN 1 AND 5),
+  trainer_feedback TEXT,
+  scheduled_at TIMESTAMPTZ,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  duration_seconds INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE session_exercises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+  exercise_id UUID REFERENCES exercises(id),
+  program_exercise_id UUID REFERENCES program_exercises(id), -- Link to AI targets
+  order_index INTEGER DEFAULT 0,
+  notes TEXT,
+  sets JSONB DEFAULT '[]',  -- Array of set objects
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE exercises (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  name_ko TEXT,                    -- Korean name
+  category TEXT,                   -- strength, cardio, flexibility
+  movement_pattern TEXT,           -- push, pull, squat, hinge, carry
+  muscle_group TEXT,               -- chest, back, legs, shoulders, arms, core
+  equipment TEXT[],                -- barbell, dumbbell, cable, bodyweight
+  is_custom BOOLEAN DEFAULT false,
+  trainer_id UUID REFERENCES accounts(id),  -- Owner if custom
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+#### 10. Key File References
+
+| File | Purpose |
+|------|---------|
+| `lib/features/active_session/presentation/screens/active_session_screen.dart` | Main session UI |
+| `lib/features/active_session/presentation/screens/session_summary_screen.dart` | Post-session summary |
+| `lib/features/active_session/presentation/providers/session_provider.dart` | Session state management |
+| `lib/features/active_session/presentation/providers/rest_timer_provider.dart` | Rest timer logic |
+| `lib/features/active_session/data/datasources/session_remote_datasource.dart` | Supabase operations |
+| `lib/features/active_session/domain/entities/session_entity.dart` | Session domain model |
+| `lib/features/active_session/domain/entities/session_exercise_entity.dart` | Exercise in session |
+| `lib/features/active_session/domain/entities/exercise_set_entity.dart` | Individual set data |
+| `lib/features/active_session/presentation/widgets/weight_adjuster.dart` | Weight input widget |
+| `lib/features/active_session/presentation/widgets/rep_selector.dart` | Rep selection widget |
+| `lib/features/active_session/presentation/widgets/rest_timer_widget.dart` | Timer display |
 
 ---
 
