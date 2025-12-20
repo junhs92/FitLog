@@ -16,6 +16,8 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_svg: ^2.0.9
   cached_network_image: ^3.3.1
+  qr_flutter: ^4.1.0
+  share_plus: ^10.0.0
 
   # State Management
   flutter_riverpod: ^2.4.10
@@ -37,7 +39,7 @@ dependencies:
   dio: ^5.4.1
 
   # Voice Input
-  speech_to_text: ^6.6.0
+  speech_to_text: ^7.0.0
   permission_handler: ^11.3.0
 
   # Utilities
@@ -48,6 +50,7 @@ dependencies:
 
   # Error Handling
   dartz: ^0.10.1
+  equatable: ^2.0.7
 
   # Haptic Feedback (built into Flutter)
 

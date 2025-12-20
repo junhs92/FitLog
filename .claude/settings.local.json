@@ -7,7 +7,8 @@
       "Bash(cat:*)",
       "Bash(where:*)",
       "Bash(find:*)",
-      "Bash(claude mcp list:*)"
+      "Bash(claude mcp list:*)",
+      "mcp__context7__get-library-docs"
     ],
     "deny": [],
     "ask": []

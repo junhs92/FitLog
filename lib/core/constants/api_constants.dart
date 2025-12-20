@@ -3,8 +3,8 @@ class ApiConstants {
   ApiConstants._();
 
   // Supabase table names
-  static const String usersTable = 'users';
-  static const String clientsTable = 'clients';
+  static const String accountsTable = 'accounts';
+  static const String trainerClientRelationshipsTable = 'trainer_client_relationships';
   static const String sessionsTable = 'sessions';
   static const String exercisesTable = 'exercises';
   static const String setsTable = 'sets';

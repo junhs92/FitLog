@@ -61,11 +61,13 @@ class QuickActionsCard extends StatelessWidget {
   final VoidCallback onStartSession;
   final VoidCallback onAddClient;
   final VoidCallback onViewClients;
+  final VoidCallback? onGenerateProgram;
 
   const QuickActionsCard({
     required this.onStartSession,
     required this.onAddClient,
     required this.onViewClients,
+    this.onGenerateProgram,
     super.key,
   });
 
@@ -105,6 +107,13 @@ class QuickActionsCard extends StatelessWidget {
                   onTap: onViewClients,
                   color: AppColors.secondary,
                 ),
+                if (onGenerateProgram != null)
+                  QuickActionButton(
+                    label: 'Generate Program',
+                    icon: Icons.auto_awesome,
+                    onTap: onGenerateProgram!,
+                    color: AppColors.info,
+                  ),
               ],
             ),
           ],

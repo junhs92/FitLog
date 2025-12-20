@@ -1,4 +1,5 @@
 /// Client domain entity
+/// Represents a client from accounts table with trainer relationship
 class ClientEntity {
   final String id;
   final String trainerId;
@@ -10,8 +11,7 @@ class ClientEntity {
   final double? height;
   final double? weight;
   final List<String> goals;
-  final String? healthHistory;
-  final String? notes;
+  final String? notes; // Trainer's private notes about this client
   final String? profilePhotoUrl;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -27,7 +27,6 @@ class ClientEntity {
     this.height,
     this.weight,
     this.goals = const [],
-    this.healthHistory,
     this.notes,
     this.profilePhotoUrl,
     required this.createdAt,
@@ -69,7 +68,6 @@ class ClientEntity {
     double? height,
     double? weight,
     List<String>? goals,
-    String? healthHistory,
     String? notes,
     String? profilePhotoUrl,
     DateTime? createdAt,
@@ -86,7 +84,6 @@ class ClientEntity {
       height: height ?? this.height,
       weight: weight ?? this.weight,
       goals: goals ?? this.goals,
-      healthHistory: healthHistory ?? this.healthHistory,
       notes: notes ?? this.notes,
       profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
       createdAt: createdAt ?? this.createdAt,

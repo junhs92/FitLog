@@ -6,6 +6,9 @@ class AppConstants {
   static const String roleTrainer = 'trainer';
   static const String roleClient = 'client';
 
+  // Trainer verification code
+  static const String trainerVerificationCode = 'fitlogcertified';
+
   // Session status
   static const String sessionStatusActive = 'active';
   static const String sessionStatusCompleted = 'completed';

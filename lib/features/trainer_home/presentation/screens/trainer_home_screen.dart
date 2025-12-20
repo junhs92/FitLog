@@ -6,7 +6,9 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
+import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../client_management/domain/entities/client_entity.dart';
 import '../providers/trainer_home_provider.dart';
 import '../widgets/quick_actions_card.dart';
 import '../widgets/recent_clients_card.dart';
@@ -98,6 +100,10 @@ class TrainerHomeScreen extends ConsumerWidget {
               onViewClients: () {
                 context.go('/trainer/clients');
               },
+              onGenerateProgram: () {
+                // Show client selection dialog for program generation
+                _showClientSelectionForProgram(context, ref, data.recentClients);
+              },
             ),
             const SizedBox(height: AppSpacing.lg),
 
@@ -126,6 +132,11 @@ class TrainerHomeScreen extends ConsumerWidget {
                 context.push('/trainer/clients/${client.id}');
               },
             ),
+            const SizedBox(height: AppSpacing.lg),
+
+            // Recent completed sessions for reports
+            if (data.completedSessions.isNotEmpty)
+              _buildRecentSessionsCard(context, data.completedSessions),
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
@@ -172,7 +183,7 @@ class TrainerHomeScreen extends ConsumerWidget {
   void _showClientSelectionForSession(
     BuildContext context,
     WidgetRef ref,
-    List<dynamic> recentClients,
+    List<ClientEntity> recentClients,
   ) {
     if (recentClients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -183,17 +194,20 @@ class TrainerHomeScreen extends ConsumerWidget {
       return;
     }
 
+    final trainerIdAsync = ref.read(trainerIdProvider);
+    final trainerId = trainerIdAsync.valueOrNull ?? '';
+
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
+      builder: (ctx) => Container(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Select Client for Session',
-              style: Theme.of(context).textTheme.titleLarge,
+              '클라이언트 선택',
+              style: Theme.of(ctx).textTheme.titleLarge,
             ),
             const SizedBox(height: AppSpacing.md),
             ...recentClients.map((client) => ListTile(
@@ -208,9 +222,75 @@ class TrainerHomeScreen extends ConsumerWidget {
                   subtitle: client.goals.isNotEmpty
                       ? Text(client.goalsText)
                       : null,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    // Show program selection sheet
+                    ProgramSelectionSheet.show(
+                      context: context,
+                      clientId: client.id,
+                      clientName: client.name,
+                      trainerId: trainerId,
+                    );
+                  },
+                )),
+            const SizedBox(height: AppSpacing.md),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.go('/trainer/clients');
+              },
+              child: const Text('전체 클라이언트 보기'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showClientSelectionForProgram(
+    BuildContext context,
+    WidgetRef ref,
+    List<ClientEntity> recentClients,
+  ) {
+    if (recentClients.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add a client first to generate a program'),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Generate AI Program for',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            ...recentClients.map((client) => ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.info.withValues(alpha: 0.1),
+                    child: Text(
+                      client.initials,
+                      style: const TextStyle(color: AppColors.info),
+                    ),
+                  ),
+                  title: Text(client.name),
+                  subtitle: client.goals.isNotEmpty
+                      ? Text(client.goalsText)
+                      : null,
+                  trailing: const Icon(Icons.auto_awesome, color: AppColors.info),
                   onTap: () {
                     Navigator.pop(context);
-                    context.push('/trainer/session/${client.id}');
+                    context.push('/trainer/program/generate/${client.id}?name=${Uri.encodeComponent(client.name)}');
                   },
                 )),
             const SizedBox(height: AppSpacing.md),
@@ -225,6 +305,93 @@ class TrainerHomeScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildRecentSessionsCard(
+    BuildContext context,
+    List<CompletedSession> sessions,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Sessions',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                Icon(Icons.history, color: AppColors.neutral700, size: 20),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            ...sessions.take(3).map((session) => _buildSessionTile(context, session)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSessionTile(BuildContext context, CompletedSession session) {
+    final timeAgo = _getTimeAgo(session.completedAt);
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: AppColors.success.withValues(alpha: 0.1),
+        child: Text(
+          session.clientInitials,
+          style: const TextStyle(
+            color: AppColors.success,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      title: Text(
+        session.clientName,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        timeAgo,
+        style: TextStyle(
+          color: AppColors.neutral700,
+          fontSize: 12,
+        ),
+      ),
+      trailing: TextButton.icon(
+        onPressed: () {
+          context.push('/trainer/report/${session.id}');
+        },
+        icon: const Icon(Icons.auto_awesome, size: 16),
+        label: const Text('Report'),
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.info,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+      ),
+    );
+  }
+
+  String _getTimeAgo(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} hours ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays} days ago';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
   }
 
   String _getGreeting() {

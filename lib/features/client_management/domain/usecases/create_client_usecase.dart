@@ -2,7 +2,7 @@ import '../../../../shared/models/result.dart';
 import '../entities/client_entity.dart';
 import '../repositories/client_repository.dart';
 
-/// Parameters for creating a client
+/// Parameters for creating a client relationship
 class CreateClientParams {
   final String name;
   final String? email;
@@ -12,8 +12,7 @@ class CreateClientParams {
   final double? height;
   final double? weight;
   final List<String> goals;
-  final String? healthHistory;
-  final String? notes;
+  final String? notes; // Trainer's private notes
 
   const CreateClientParams({
     required this.name,
@@ -24,7 +23,6 @@ class CreateClientParams {
     this.height,
     this.weight,
     this.goals = const [],
-    this.healthHistory,
     this.notes,
   });
 }
@@ -47,7 +45,6 @@ class CreateClientUseCase {
       height: params.height,
       weight: params.weight,
       goals: params.goals,
-      healthHistory: params.healthHistory,
       notes: params.notes,
       createdAt: DateTime.now(),
     );

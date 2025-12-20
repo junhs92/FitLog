@@ -31,18 +31,21 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       throw Exception('Login failed');
     }
 
-    // Fetch user profile from users table
+    // Fetch user profile from accounts table using user_id
     final userData = await _client
-        .from(ApiConstants.usersTable)
+        .from(ApiConstants.accountsTable)
         .select()
-        .eq('id', response.user!.id)
+        .eq('user_id', response.user!.id)
         .single();
 
     // Update last login
     await _client
-        .from(ApiConstants.usersTable)
-        .update({'last_login_at': DateTime.now().toIso8601String()})
-        .eq('id', response.user!.id);
+        .from(ApiConstants.accountsTable)
+        .update({
+          'last_login_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        })
+        .eq('user_id', response.user!.id);
 
     return UserModel.fromJson(userData);
   }
@@ -54,32 +57,33 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     String name,
     String role,
   ) async {
+    // Pass user data via metadata - the database trigger will create the account
+    // This is more secure as it doesn't expose direct table access to clients
     final response = await _client.auth.signUp(
       email: email,
       password: password,
+      data: {
+        'full_name': name,
+        'role': role,
+      },
     );
 
     if (response.user == null) {
       throw Exception('Sign up failed');
     }
 
-    // Create user profile in users table
-    final userData = {
-      'id': response.user!.id,
-      'email': email,
-      'name': name,
-      'role': role,
-      'created_at': DateTime.now().toIso8601String(),
-    };
-
-    await _client.from(ApiConstants.usersTable).insert(userData);
-
-    return UserModel.fromJson({
-      ...userData,
-      'phone': null,
-      'profile_photo_url': null,
-      'last_login_at': null,
-    });
+    // After signup, user may not have a session yet (email confirmation pending)
+    // Return user data from the signup response, not from database
+    // The database trigger creates the account record server-side
+    // Full account data will be fetched on login when session is active
+    return UserModel(
+      id: '', // Will be set when fetched from DB on login
+      userId: response.user!.id,
+      email: email,
+      name: name,
+      role: role,
+      createdAt: DateTime.now(),
+    );
   }
 
   @override
@@ -96,9 +100,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
 
     final userData = await _client
-        .from(ApiConstants.usersTable)
+        .from(ApiConstants.accountsTable)
         .select()
-        .eq('id', user.id)
+        .eq('user_id', user.id)
         .single();
 
     return UserModel.fromJson(userData);
@@ -117,15 +121,18 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       throw Exception('No authenticated user');
     }
 
+    // Add updated_at timestamp
+    data['updated_at'] = DateTime.now().toIso8601String();
+
     await _client
-        .from(ApiConstants.usersTable)
+        .from(ApiConstants.accountsTable)
         .update(data)
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
     final userData = await _client
-        .from(ApiConstants.usersTable)
+        .from(ApiConstants.accountsTable)
         .select()
-        .eq('id', user.id)
+        .eq('user_id', user.id)
         .single();
 
     return UserModel.fromJson(userData);
@@ -140,9 +147,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       try {
         final userData = await _client
-            .from(ApiConstants.usersTable)
+            .from(ApiConstants.accountsTable)
             .select()
-            .eq('id', event.session!.user.id)
+            .eq('user_id', event.session!.user.id)
             .single();
 
         return UserModel.fromJson(userData);

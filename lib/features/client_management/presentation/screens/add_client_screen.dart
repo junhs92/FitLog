@@ -52,7 +52,6 @@ class AddClientScreen extends ConsumerWidget {
                   height: formData.height,
                   weight: formData.weight,
                   goals: formData.goals,
-                  healthHistory: formData.healthHistory,
                   notes: formData.notes,
                 ),
               );

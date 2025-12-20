@@ -105,16 +105,35 @@ flutter pub run build_runner build --delete-conflicting-outputs
 
 ### 3. Configure Environment
 
-Create `.env` file:
+Copy `.env.example` to `.env` and fill in your Supabase credentials:
+```bash
+cp .env.example .env
+```
+
 ```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 ### 4. Run
 
+**Option A: VS Code (Recommended)**
+
+Use the pre-configured launch configs in `.vscode/launch.json`:
+- Press `F5` and select "FitLog Pro (Debug)" or "FitLog Pro (Chrome)"
+
+**Option B: Command Line**
+
 ```bash
-flutter run
+# Mobile
+flutter run \
+  --dart-define=SUPABASE_URL=https://xxx.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=eyJ...
+
+# Web (Chrome on port 3000)
+flutter run -d chrome --web-port=3000 \
+  --dart-define=SUPABASE_URL=https://xxx.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=eyJ...
 ```
 
 ---
@@ -190,6 +209,7 @@ Comprehensive docs in `docs/`:
 - **[PRD](docs/product/PRD.md)** - Product Requirements
 - **[TSD](docs/technical/TSD.md)** - Technical Specifications
 - **[TSD-Flutter](docs/technical/TSD-Flutter.md)** - Flutter Implementation Guide
+- **[ARCHITECTURE](docs/technical/ARCHITECTURE.md)** - Code Architecture & Developer Guide
 - **[UXUI-Flutter](docs/design/UXUI-Flutter.md)** - Widget Specifications
 
 ---

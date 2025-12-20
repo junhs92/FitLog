@@ -7,6 +7,8 @@ import '../../../../core/theme/spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
+import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
+import '../../../trainer_home/presentation/providers/trainer_home_provider.dart';
 import '../../domain/entities/client_entity.dart';
 import '../providers/client_provider.dart';
 import '../widgets/client_form.dart';
@@ -58,6 +60,17 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
         actions: [
           if (!_isEditing)
             IconButton(
+              icon: const Icon(Icons.auto_awesome),
+              tooltip: 'Generate AI Program',
+              onPressed: () {
+                final client = ref.read(clientProvider(widget.clientId)).valueOrNull;
+                if (client != null) {
+                  context.push('/trainer/program/generate/${widget.clientId}?name=${Uri.encodeComponent(client.name)}');
+                }
+              },
+            ),
+          if (!_isEditing)
+            IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => setState(() => _isEditing = true),
             ),
@@ -104,7 +117,6 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                   height: formData.height,
                   weight: formData.weight,
                   goals: formData.goals,
-                  healthHistory: formData.healthHistory,
                   notes: formData.notes,
                 );
                 await ref
@@ -123,12 +135,22 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
       ),
       floatingActionButton: _isEditing
           ? null
-          : FloatingActionButton.extended(
-              onPressed: () {
-                context.push('/trainer/session/${widget.clientId}');
-              },
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Start Session'),
+          : clientAsync.maybeWhen(
+              data: (client) => FloatingActionButton.extended(
+                onPressed: () {
+                  final trainerIdAsync = ref.read(trainerIdProvider);
+                  final trainerId = trainerIdAsync.valueOrNull ?? '';
+                  ProgramSelectionSheet.show(
+                    context: context,
+                    clientId: widget.clientId,
+                    clientName: client.name,
+                    trainerId: trainerId,
+                  );
+                },
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('세션 시작'),
+              ),
+              orElse: () => null,
             ),
     );
   }
@@ -208,15 +230,7 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
               ],
             ),
 
-          // Health history
-          if (client.healthHistory != null)
-            _buildSection(
-              context,
-              'Health History',
-              [Text(client.healthHistory!)],
-            ),
-
-          // Notes
+          // Notes (Trainer's private notes)
           if (client.notes != null)
             _buildSection(
               context,

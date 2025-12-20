@@ -13,34 +13,63 @@ abstract class ClientRemoteDataSource {
 }
 
 /// Implementation using Supabase
+/// Queries trainer_client_relationships joined with accounts table
 class ClientRemoteDataSourceImpl implements ClientRemoteDataSource {
   final SupabaseClient _client;
-  static const String _tableName = 'clients';
 
   ClientRemoteDataSourceImpl(this._client);
 
-  String get _currentUserId => _client.auth.currentUser!.id;
+  /// Get current user's account ID using the helper function
+  Future<String> _getMyAccountId() async {
+    final result = await _client.rpc('get_my_account_id');
+    return result as String;
+  }
+
+  /// Select statement for client data with accounts join
+  static const String _clientSelect = '''
+    id,
+    trainer_id,
+    trainer_notes,
+    client:accounts!trainer_client_relationships_client_id_fkey(
+      id,
+      full_name,
+      email,
+      phone,
+      date_of_birth,
+      gender,
+      height_cm,
+      weight_kg,
+      fitness_goals,
+      avatar_url,
+      created_at,
+      updated_at
+    )
+  ''';
 
   @override
   Future<List<ClientModel>> getClients() async {
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .eq('trainer_id', _currentUserId)
-        .order('name', ascending: true);
+    final trainerAccountId = await _getMyAccountId();
 
-    return (response as List)
-        .map((json) => ClientModel.fromJson(json))
-        .toList();
+    final response = await _client
+        .from('trainer_client_relationships')
+        .select(_clientSelect)
+        .eq('trainer_id', trainerAccountId)
+        .eq('status', 'active');
+
+    return (response as List).map((json) => ClientModel.fromJson(json)).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 
   @override
   Future<ClientModel> getClientById(String id) async {
+    final trainerAccountId = await _getMyAccountId();
+
     final response = await _client
-        .from(_tableName)
-        .select()
-        .eq('id', id)
-        .eq('trainer_id', _currentUserId)
+        .from('trainer_client_relationships')
+        .select(_clientSelect)
+        .eq('trainer_id', trainerAccountId)
+        .eq('client_id', id)
+        .eq('status', 'active')
         .single();
 
     return ClientModel.fromJson(response);
@@ -48,51 +77,83 @@ class ClientRemoteDataSourceImpl implements ClientRemoteDataSource {
 
   @override
   Future<ClientModel> createClient(ClientModel client) async {
-    final data = client.toInsertJson();
-    data['trainer_id'] = _currentUserId;
+    // Creating a client means creating a relationship with an existing account
+    // The client account must already exist (they sign up themselves)
+    // This method creates the trainer-client relationship
+    final trainerAccountId = await _getMyAccountId();
 
-    final response = await _client
-        .from(_tableName)
-        .insert(data)
-        .select()
+    if (client.email == null || client.email!.isEmpty) {
+      throw Exception('Client email is required to create a relationship');
+    }
+
+    // First, find the client account by email
+    final clientAccount = await _client
+        .from('accounts')
+        .select('id')
+        .eq('email', client.email!)
         .single();
 
-    return ClientModel.fromJson(response);
+    // Create the relationship
+    final relationshipResponse = await _client
+        .from('trainer_client_relationships')
+        .insert({
+          'trainer_id': trainerAccountId,
+          'client_id': clientAccount['id'],
+          'status': 'active',
+          'trainer_notes': client.notes,
+        })
+        .select(_clientSelect)
+        .single();
+
+    return ClientModel.fromJson(relationshipResponse);
   }
 
   @override
   Future<ClientModel> updateClient(ClientModel client) async {
-    final response = await _client
-        .from(_tableName)
-        .update(client.toUpdateJson())
-        .eq('id', client.id)
-        .eq('trainer_id', _currentUserId)
-        .select()
-        .single();
+    final trainerAccountId = await _getMyAccountId();
 
-    return ClientModel.fromJson(response);
+    // Update trainer notes in relationship table
+    await _client
+        .from('trainer_client_relationships')
+        .update(client.toRelationshipUpdateJson())
+        .eq('trainer_id', trainerAccountId)
+        .eq('client_id', client.id);
+
+    // Fetch updated data
+    return getClientById(client.id);
   }
 
   @override
   Future<void> deleteClient(String id) async {
-    await _client
-        .from(_tableName)
-        .delete()
-        .eq('id', id)
-        .eq('trainer_id', _currentUserId);
+    final trainerAccountId = await _getMyAccountId();
+
+    // End the relationship (don't delete the client account)
+    await _client.from('trainer_client_relationships').update({
+      'status': 'ended',
+      'relationship_ended_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('trainer_id', trainerAccountId).eq('client_id', id);
   }
 
   @override
   Future<List<ClientModel>> searchClients(String query) async {
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .eq('trainer_id', _currentUserId)
-        .ilike('name', '%$query%')
-        .order('name', ascending: true);
+    final trainerAccountId = await _getMyAccountId();
 
-    return (response as List)
+    // Get all active relationships first
+    final response = await _client
+        .from('trainer_client_relationships')
+        .select(_clientSelect)
+        .eq('trainer_id', trainerAccountId)
+        .eq('status', 'active');
+
+    // Filter by name client-side (Supabase doesn't support filtering on joined tables directly)
+    final clients = (response as List)
         .map((json) => ClientModel.fromJson(json))
-        .toList();
+        .where((client) =>
+            client.name.toLowerCase().contains(query.toLowerCase()))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    return clients;
   }
 }

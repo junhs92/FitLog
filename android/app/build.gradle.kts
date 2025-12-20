@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.fitlogpro.fitlog_pro_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

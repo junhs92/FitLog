@@ -23,6 +23,11 @@ class ClientsListScreen extends ConsumerWidget {
         title: const Text('My Clients'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_search),
+            tooltip: 'Connect with Client',
+            onPressed: () => context.push('/trainer/clients/connect'),
+          ),
+          IconButton(
             icon: const Icon(Icons.search),
             onPressed: () => _showSearchDialog(context, ref),
           ),
@@ -97,7 +102,7 @@ class ClientsListScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/trainer/clients/add'),
+        onPressed: () => _showAddClientOptions(context),
         icon: const Icon(Icons.person_add),
         label: const Text('Add Client'),
       ),
@@ -133,27 +138,105 @@ class ClientsListScreen extends ConsumerWidget {
     }
 
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.people_outline,
-            size: 64,
-            color: AppColors.neutral500,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            'No clients yet',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Add your first client to get started',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.neutral700,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.people_outline,
+              size: 64,
+              color: AppColors.neutral500,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'No clients yet',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Connect with existing users or add a new client to get started',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.neutral700,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            FilledButton.icon(
+              onPressed: () => context.push('/trainer/clients/connect'),
+              icon: const Icon(Icons.person_search),
+              label: const Text('Connect with Client'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddClientOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  ),
+                  child: const Icon(
+                    Icons.person_search,
+                    color: AppColors.primary,
+                  ),
                 ),
+                title: const Text(
+                  'Connect with Existing User',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Send a connection request to someone who already has an account',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/trainer/clients/connect');
+                },
+              ),
+              const Divider(height: AppSpacing.lg),
+              ListTile(
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  ),
+                  child: const Icon(
+                    Icons.person_add,
+                    color: AppColors.secondary,
+                  ),
+                ),
+                title: const Text(
+                  'Create New Client',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Add a new client profile manually',
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/trainer/clients/add');
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

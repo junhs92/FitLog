@@ -24,8 +24,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _trainerCodeController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _obscureTrainerCode = true;
   String _selectedRole = AppConstants.roleTrainer;
 
   @override
@@ -34,11 +36,25 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _trainerCodeController.dispose();
     super.dispose();
   }
 
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Verify trainer code if registering as trainer
+    if (_selectedRole == AppConstants.roleTrainer) {
+      if (_trainerCodeController.text.trim() != AppConstants.trainerVerificationCode) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Invalid trainer verification code'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    }
 
     await ref.read(authNotifierProvider.notifier).register(
           email: _emailController.text.trim(),
@@ -122,7 +138,40 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.lg),
+
+                // Trainer verification code field (only shown for trainer role)
+                if (_selectedRole == AppConstants.roleTrainer) ...[
+                  TextFormField(
+                    controller: _trainerCodeController,
+                    obscureText: _obscureTrainerCode,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Trainer Verification Code',
+                      hintText: 'Enter your trainer code',
+                      prefixIcon: const Icon(Icons.verified_user_outlined),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureTrainerCode
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () {
+                          setState(() => _obscureTrainerCode = !_obscureTrainerCode);
+                        },
+                      ),
+                    ),
+                    validator: (value) {
+                      if (_selectedRole == AppConstants.roleTrainer) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Trainer verification code is required';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
 
                 // Name field
                 TextFormField(

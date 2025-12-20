@@ -29,7 +29,6 @@ class _ClientFormState extends State<ClientForm> {
   late final TextEditingController _phoneController;
   late final TextEditingController _heightController;
   late final TextEditingController _weightController;
-  late final TextEditingController _healthHistoryController;
   late final TextEditingController _notesController;
 
   DateTime? _dateOfBirth;
@@ -61,9 +60,6 @@ class _ClientFormState extends State<ClientForm> {
     _weightController = TextEditingController(
       text: client?.weight?.toString() ?? '',
     );
-    _healthHistoryController = TextEditingController(
-      text: client?.healthHistory ?? '',
-    );
     _notesController = TextEditingController(text: client?.notes ?? '');
     _dateOfBirth = client?.dateOfBirth;
     _gender = client?.gender;
@@ -77,7 +73,6 @@ class _ClientFormState extends State<ClientForm> {
     _phoneController.dispose();
     _heightController.dispose();
     _weightController.dispose();
-    _healthHistoryController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -98,9 +93,6 @@ class _ClientFormState extends State<ClientForm> {
       height: double.tryParse(_heightController.text),
       weight: double.tryParse(_weightController.text),
       goals: _selectedGoals,
-      healthHistory: _healthHistoryController.text.trim().isEmpty
-          ? null
-          : _healthHistoryController.text.trim(),
       notes: _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim(),
@@ -196,20 +188,7 @@ class _ClientFormState extends State<ClientForm> {
           _buildGoalsSelector(),
           const SizedBox(height: AppSpacing.lg),
 
-          // Health History
-          TextFormField(
-            controller: _healthHistoryController,
-            decoration: const InputDecoration(
-              labelText: 'Health History',
-              hintText: 'Any medical conditions, injuries, etc.',
-              alignLabelWithHint: true,
-            ),
-            maxLines: 3,
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: AppSpacing.lg),
-
-          // Notes
+          // Notes (Trainer's private notes about this client)
           TextFormField(
             controller: _notesController,
             decoration: const InputDecoration(
@@ -346,8 +325,7 @@ class ClientFormData {
   final double? height;
   final double? weight;
   final List<String> goals;
-  final String? healthHistory;
-  final String? notes;
+  final String? notes; // Trainer's private notes
 
   const ClientFormData({
     required this.name,
@@ -358,7 +336,6 @@ class ClientFormData {
     this.height,
     this.weight,
     this.goals = const [],
-    this.healthHistory,
     this.notes,
   });
 }
