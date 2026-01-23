@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../domain/entities/session_feedback.dart';
+import '../../domain/entities/alternative_exercise.dart';
 import '../providers/ai_workout_provider.dart';
 
 /// Widget for real-time difficulty feedback during sessions
+/// Now replaced with alternative exercise button that opens a bottom sheet
 class DifficultyFeedbackWidget extends ConsumerWidget {
   final String sessionExerciseId;
   final String exerciseId;
@@ -22,200 +24,356 @@ class DifficultyFeedbackWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final feedbackState = ref.watch(sessionFeedbackProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Feedback buttons
-        _FeedbackButtons(
-          currentFeedback: feedbackState.currentFeedback,
-          onFeedback: (feedback) => _handleFeedback(ref, feedback),
-        ),
-        // Alternatives (shown when struggling or too easy)
-        if (feedbackState.alternatives.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.md),
-          _AlternativesSection(
-            alternatives: feedbackState.alternatives,
-            isLoading: feedbackState.isLoading,
-            onSelect: onAlternativeSelected,
-          ),
-        ],
-      ],
-    );
-  }
-
-  void _handleFeedback(WidgetRef ref, DifficultyFeedback feedback) {
-    ref.read(sessionFeedbackProvider.notifier).recordFeedback(
-          sessionExerciseId: sessionExerciseId,
-          exerciseId: exerciseId,
-          clientId: clientId,
-          feedback: feedback,
-        );
-  }
-}
-
-class _FeedbackButtons extends StatelessWidget {
-  final DifficultyFeedback? currentFeedback;
-  final Function(DifficultyFeedback) onFeedback;
-
-  const _FeedbackButtons({
-    required this.currentFeedback,
-    required this.onFeedback,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _FeedbackButton(
-            feedback: DifficultyFeedback.struggling,
-            isSelected: currentFeedback == DifficultyFeedback.struggling,
-            onTap: () => onFeedback(DifficultyFeedback.struggling),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _FeedbackButton(
-            feedback: DifficultyFeedback.justRight,
-            isSelected: currentFeedback == DifficultyFeedback.justRight,
-            onTap: () => onFeedback(DifficultyFeedback.justRight),
-          ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: _FeedbackButton(
-            feedback: DifficultyFeedback.tooEasy,
-            isSelected: currentFeedback == DifficultyFeedback.tooEasy,
-            onTap: () => onFeedback(DifficultyFeedback.tooEasy),
-          ),
-        ),
-      ],
+    return AlternativeExerciseButton(
+      exerciseId: exerciseId,
+      onAlternativeSelected: onAlternativeSelected,
     );
   }
 }
 
-class _FeedbackButton extends StatelessWidget {
-  final DifficultyFeedback feedback;
-  final bool isSelected;
-  final VoidCallback onTap;
+/// Button to open alternative exercise bottom sheet
+class AlternativeExerciseButton extends ConsumerWidget {
+  final String exerciseId;
+  final Function(SessionAlternative)? onAlternativeSelected;
 
-  const _FeedbackButton({
-    required this.feedback,
-    required this.isSelected,
-    required this.onTap,
+  const AlternativeExerciseButton({
+    required this.exerciseId,
+    this.onAlternativeSelected,
+    super.key,
   });
 
   @override
-  Widget build(BuildContext context) {
-    Color bgColor;
-    Color borderColor;
-
-    switch (feedback) {
-      case DifficultyFeedback.struggling:
-        bgColor = isSelected ? AppColors.error : AppColors.error.withValues(alpha: 0.1);
-        borderColor = AppColors.error;
-        break;
-      case DifficultyFeedback.justRight:
-        bgColor = isSelected ? AppColors.success : AppColors.success.withValues(alpha: 0.1);
-        borderColor = AppColors.success;
-        break;
-      case DifficultyFeedback.tooEasy:
-        bgColor = isSelected ? AppColors.warning : AppColors.warning.withValues(alpha: 0.1);
-        borderColor = AppColors.warning;
-        break;
-    }
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: () => _showAlternativesSheet(context, ref),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
-            color: bgColor,
-            border: Border.all(color: borderColor, width: isSelected ? 2 : 1),
+            color: AppColors.primary.withValues(alpha: 0.1),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.5),
+              width: 1,
+            ),
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           ),
-          child: Column(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                feedback.emoji,
-                style: const TextStyle(fontSize: 24),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                feedback.displayName,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? AppColors.neutralWhite : borderColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AlternativesSection extends StatelessWidget {
-  final List<SessionAlternative> alternatives;
-  final bool isLoading;
-  final Function(SessionAlternative)? onSelect;
-
-  const _AlternativesSection({
-    required this.alternatives,
-    required this.isLoading,
-    this.onSelect,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.md),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
+              Icon(
                 Icons.swap_horiz,
                 size: 18,
                 color: AppColors.primary,
               ),
-              const SizedBox(width: 8),
-              const Text(
-                '대안 운동 추천',
+              const SizedBox(width: 6),
+              Text(
+                '대체 운동',
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.neutralBlack,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.sm),
-          ...alternatives.map((alt) => _AlternativeItem(
+        ),
+      ),
+    );
+  }
+
+  void _showAlternativesSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => AlternativeExerciseBottomSheet(
+        exerciseId: exerciseId,
+        onAlternativeSelected: (alt) {
+          Navigator.pop(ctx);
+          onAlternativeSelected?.call(alt);
+        },
+      ),
+    );
+  }
+}
+
+/// Bottom sheet showing alternative exercises grouped by type
+class AlternativeExerciseBottomSheet extends ConsumerWidget {
+  final String exerciseId;
+  final Function(SessionAlternative)? onAlternativeSelected;
+
+  const AlternativeExerciseBottomSheet({
+    required this.exerciseId,
+    this.onAlternativeSelected,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alternativesAsync = ref.watch(alternativeExercisesProvider(exerciseId));
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.neutral300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.swap_horiz,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '대체 운동 추천',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.neutralBlack,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Content
+          Flexible(
+            child: alternativesAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AppColors.error,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '대체 운동을 불러오는데 실패했습니다',
+                        style: TextStyle(
+                          color: AppColors.neutral700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              data: (result) {
+                if (result.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.fitness_center,
+                            color: AppColors.neutral400,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            '대체 운동이 없습니다',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.neutral700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '같은 패턴의 운동을 찾을 수 없습니다',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.neutral500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Equipment alternatives section
+                      if (result.equipmentAlternatives.isNotEmpty) ...[
+                        _buildSectionHeader(
+                          icon: Icons.build_outlined,
+                          title: '다른 장비로',
+                          subtitle: '같은 움직임, 다른 장비',
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...result.equipmentAlternatives.map((group) =>
+                            _buildEquipmentGroup(group)),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                      // Pattern alternatives section
+                      if (result.patternAlternatives.isNotEmpty) ...[
+                        _buildSectionHeader(
+                          icon: Icons.repeat,
+                          title: '같은 패턴',
+                          subtitle: '같은 장비, 비슷한 운동',
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...result.patternAlternatives.map((alt) =>
+                            _AlternativeExerciseItem(
+                              alternative: alt,
+                              onSelect: () => onAlternativeSelected?.call(alt),
+                            )),
+                      ],
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: AppColors.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.neutralBlack,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.neutral500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEquipmentGroup(EquipmentGroup group) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Equipment header
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.neutral100,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(AppSpacing.radiusMd - 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    group.equipmentLabel,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${group.exercises.length}개',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.neutral500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Exercises in this equipment group
+          ...group.exercises.map((alt) => _AlternativeExerciseItem(
                 alternative: alt,
-                onSelect: () => onSelect?.call(alt),
+                onSelect: () => onAlternativeSelected?.call(alt),
+                showEquipmentBadge: false,
               )),
         ],
       ),
@@ -223,32 +381,33 @@ class _AlternativesSection extends StatelessWidget {
   }
 }
 
-class _AlternativeItem extends StatelessWidget {
+/// Individual alternative exercise item
+class _AlternativeExerciseItem extends StatelessWidget {
   final SessionAlternative alternative;
   final VoidCallback onSelect;
+  final bool showEquipmentBadge;
 
-  const _AlternativeItem({
+  const _AlternativeExerciseItem({
     required this.alternative,
     required this.onSelect,
+    this.showEquipmentBadge = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
         onTap: onSelect,
-        borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.all(AppSpacing.sm),
+          padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
-            color: alternative.isRecommended
-                ? AppColors.primary.withValues(alpha: 0.08)
-                : AppColors.surfaceLight,
-            borderRadius: BorderRadius.circular(8),
-            border: alternative.isRecommended
-                ? Border.all(color: AppColors.primary.withValues(alpha: 0.3))
-                : null,
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.neutral100,
+                width: 1,
+              ),
+            ),
           ),
           child: Row(
             children: [
@@ -258,17 +417,19 @@ class _AlternativeItem extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          alternative.displayName,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.neutralBlack,
+                        Expanded(
+                          child: Text(
+                            alternative.displayName,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.neutralBlack,
+                            ),
                           ),
                         ),
-                        if (alternative.isRecommended) ...[
-                          const SizedBox(width: 8),
+                        if (alternative.isRecommended)
                           Container(
+                            margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 2,
@@ -286,23 +447,24 @@ class _AlternativeItem extends StatelessWidget {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       alternative.displayReason,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.neutral700,
+                        color: AppColors.neutral500,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(
+              const SizedBox(width: 8),
+              Icon(
                 Icons.chevron_right,
                 color: AppColors.neutral400,
+                size: 20,
               ),
             ],
           ),
@@ -313,6 +475,7 @@ class _AlternativeItem extends StatelessWidget {
 }
 
 /// Compact difficulty feedback for inline use
+/// Now replaced with compact alternative exercise button
 class DifficultyFeedbackCompact extends StatelessWidget {
   final DifficultyFeedback? currentFeedback;
   final Function(DifficultyFeedback) onFeedback;
@@ -325,58 +488,8 @@ class DifficultyFeedbackCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: DifficultyFeedback.values.map((feedback) {
-        final isSelected = currentFeedback == feedback;
-        return Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: InkWell(
-            onTap: () => onFeedback(feedback),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? _getFeedbackColor(feedback)
-                    : _getFeedbackColor(feedback).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    feedback.emoji,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    feedback.displayName,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected
-                          ? AppColors.neutralWhite
-                          : _getFeedbackColor(feedback),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Color _getFeedbackColor(DifficultyFeedback feedback) {
-    switch (feedback) {
-      case DifficultyFeedback.struggling:
-        return AppColors.error;
-      case DifficultyFeedback.justRight:
-        return AppColors.success;
-      case DifficultyFeedback.tooEasy:
-        return AppColors.warning;
-    }
+    // Return empty container - this widget is deprecated
+    // Use AlternativeExerciseButton instead
+    return const SizedBox.shrink();
   }
 }

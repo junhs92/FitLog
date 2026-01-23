@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../active_session/domain/entities/exercise_entity.dart';
 import '../../data/datasources/ai_workout_remote_datasource.dart';
 import '../../data/repositories/ai_workout_repository_impl.dart';
 import '../../domain/entities/workout_program.dart';
 import '../../domain/entities/session_feedback.dart';
 import '../../domain/entities/ai_reasoning.dart';
+import '../../domain/entities/alternative_exercise.dart';
 import '../../domain/repositories/ai_workout_repository.dart';
 
 /// Provider for Supabase client
@@ -22,24 +25,24 @@ final aiWorkoutRepositoryProvider = Provider<AIWorkoutRepository>((ref) {
   return AIWorkoutRepositoryImpl(ref.read(_aiWorkoutDataSourceProvider));
 });
 
-/// State for program generation
-class ProgramGenerationState {
+/// State for program creation (new simplified structure)
+class ProgramCreationState {
   final WorkoutProgramEntity? program;
   final bool isLoading;
   final String? error;
 
-  const ProgramGenerationState({
+  const ProgramCreationState({
     this.program,
     this.isLoading = false,
     this.error,
   });
 
-  ProgramGenerationState copyWith({
+  ProgramCreationState copyWith({
     WorkoutProgramEntity? program,
     bool? isLoading,
     String? error,
   }) {
-    return ProgramGenerationState(
+    return ProgramCreationState(
       program: program ?? this.program,
       isLoading: isLoading ?? this.isLoading,
       error: error,
@@ -47,106 +50,131 @@ class ProgramGenerationState {
   }
 }
 
-/// Notifier for program generation
-class ProgramGenerationNotifier extends StateNotifier<ProgramGenerationState> {
+/// Notifier for program creation
+/// Programs are now training DIRECTIONS with client preferences
+/// Goals come from client's account (accounts.fitness_goals)
+/// Programs store preferences: training split, focus areas, movement patterns
+class ProgramCreationNotifier extends StateNotifier<ProgramCreationState> {
   final AIWorkoutRepository _repository;
 
-  ProgramGenerationNotifier(this._repository)
-      : super(const ProgramGenerationState());
+  ProgramCreationNotifier(this._repository)
+      : super(const ProgramCreationState());
 
-  /// Generate a new single workout session
-  Future<void> generateProgram({
+  /// Create a new training program (direction with preferences) and generate exercises
+  /// Flow: Save program → Generate exercises → Update program → Return with exercises
+  /// Goals are fetched from client's account, not passed here
+  Future<void> createProgram({
     required String clientId,
     required String trainerId,
-    required TrainingGoal primaryGoal,
-    TrainingGoal? secondaryGoal,
-    List<String>? excludedExerciseIds,
-    List<String>? preferredEquipment,
+    required String name,
+    String? description,
+    required TrainingSplit trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
   }) async {
-    print('[ProgramGeneration] Starting program generation...');
-    print('[ProgramGeneration] ClientId: $clientId, Goal: ${primaryGoal.id}');
+    debugPrint('🟢 [PROVIDER] createProgram started');
+    debugPrint('🟢 [PROVIDER] clientId: $clientId, trainerId: $trainerId');
+    debugPrint('🟢 [PROVIDER] name: $name, trainingSplit: ${trainingSplit.id}');
+    debugPrint('🟢 [PROVIDER] focusAreas: $focusAreas');
+    debugPrint('🟢 [PROVIDER] preferredMovementGroups: $preferredMovementGroups');
+
     state = state.copyWith(isLoading: true, error: null);
+    debugPrint('🟢 [PROVIDER] State set to loading');
 
-    final result = await _repository.generateProgram(
-      clientId: clientId,
-      trainerId: trainerId,
-      primaryGoal: primaryGoal,
-      secondaryGoal: secondaryGoal,
-      excludedExerciseIds: excludedExerciseIds,
-      preferredEquipment: preferredEquipment,
-    );
+    try {
+      // Step 1: Create program (save preferences)
+      debugPrint('🟢 [PROVIDER] Step 1: Calling repository.createProgram...');
+      final createResult = await _repository.createProgram(
+        clientId: clientId,
+        trainerId: trainerId,
+        name: name,
+        description: description,
+        trainingSplit: trainingSplit,
+        focusAreas: focusAreas,
+        preferredMovementGroups: preferredMovementGroups,
+      );
 
-    result.fold(
-      (failure) {
-        print('[ProgramGeneration] ====== FAILED ======');
-        print('[ProgramGeneration] Error: ${failure.message}');
-        state = state.copyWith(
-          isLoading: false,
-          error: failure.message,
-        );
-      },
-      (program) {
-        print('[ProgramGeneration] ====== SUCCESS ======');
-        print('[ProgramGeneration] Program ID: ${program.id}');
-        print('[ProgramGeneration] Program Name: ${program.name}');
-        print('[ProgramGeneration] AI Model: ${program.aiModelVersion}');
-        print('[ProgramGeneration] Updating state with program...');
-        state = state.copyWith(
-          program: program,
-          isLoading: false,
-        );
-        print('[ProgramGeneration] State updated. Program in state: ${state.program?.id}');
-      },
-    );
+      await createResult.fold(
+        (failure) async {
+          debugPrint('🔴 [PROVIDER] Program creation FAILED: ${failure.message}');
+          state = state.copyWith(
+            isLoading: false,
+            error: failure.message,
+          );
+        },
+        (program) async {
+          debugPrint('🟢 [PROVIDER] Program created: ${program.id}');
+
+          // Step 2: Generate exercises by calling AI edge function
+          // Creates session in database with AI-recommended exercises
+          // Edge function fetches client's goals from accounts table
+          debugPrint('🟢 [PROVIDER] Step 2: Calling AI to generate exercises...');
+          final exercisesResult = await _repository.generateExercisesForProgram(
+            clientId: clientId,
+            programId: program.id,
+            trainerId: trainerId,
+            trainingSplit: trainingSplit,
+            focusAreas: focusAreas,
+            preferredMovementGroups: preferredMovementGroups,
+          );
+
+          await exercisesResult.fold(
+            (failure) async {
+              debugPrint('🔴 [PROVIDER] Exercise generation FAILED: ${failure.message}');
+              // Still return program even if exercise generation fails
+              state = state.copyWith(
+                program: program,
+                isLoading: false,
+                error: 'Program created but exercise generation failed: ${failure.message}',
+              );
+            },
+            (sessionData) async {
+              debugPrint('🟢 [PROVIDER] Generated ${sessionData.exercises.length} exercises');
+
+              // Keep exercises in memory (NOT saved to DB)
+              // Exercises will be passed to session_exercises when session starts
+              final programWithExercises = program.copyWith(
+                generatedExercises: sessionData.exercises,
+              );
+
+              debugPrint('🟢 [PROVIDER] Program updated in memory with ${sessionData.exercises.length} exercises');
+              state = state.copyWith(
+                program: programWithExercises,
+                isLoading: false,
+              );
+              debugPrint('🟢 [PROVIDER] State updated with program and exercises');
+            },
+          );
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('🔴 [PROVIDER] EXCEPTION: $e');
+      debugPrint('🔴 [PROVIDER] STACK: $stackTrace');
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+    }
   }
 
   /// Load an existing program
   Future<void> loadProgram(String programId) async {
-    print('[ProgramGeneration] loadProgram called for: $programId');
-    print('[ProgramGeneration] Current state has program: ${state.program?.id}');
     state = state.copyWith(isLoading: true, error: null);
 
     final result = await _repository.getProgram(programId);
 
     result.fold(
       (failure) {
-        print('[ProgramGeneration] loadProgram FAILED: ${failure.message}');
         state = state.copyWith(
           isLoading: false,
           error: failure.message,
         );
       },
       (program) {
-        print('[ProgramGeneration] loadProgram SUCCESS');
-        print('[ProgramGeneration] Loaded: ${program.name} with ${program.workoutDays.length} days');
-        print('[ProgramGeneration] First day has ${program.workoutDays.firstOrNull?.exercises.length ?? 0} exercises');
         state = state.copyWith(
           program: program,
           isLoading: false,
         );
-      },
-    );
-  }
-
-  /// Swap an exercise
-  Future<void> swapExercise({
-    required String programExerciseId,
-    required String newExerciseId,
-    String? reason,
-  }) async {
-    final result = await _repository.swapExercise(
-      programExerciseId: programExerciseId,
-      newExerciseId: newExerciseId,
-      reason: reason,
-    );
-
-    result.fold(
-      (failure) => state = state.copyWith(error: failure.message),
-      (_) {
-        // Reload program to get updated data
-        if (state.program != null) {
-          loadProgram(state.program!.id);
-        }
       },
     );
   }
@@ -166,17 +194,220 @@ class ProgramGenerationNotifier extends StateNotifier<ProgramGenerationState> {
     );
   }
 
+  /// Delete program
+  Future<bool> deleteProgram(String programId) async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    final result = await _repository.deleteProgram(programId);
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(
+          isLoading: false,
+          error: failure.message,
+        );
+        return false;
+      },
+      (_) {
+        state = const ProgramCreationState();
+        return true;
+      },
+    );
+  }
+
+  /// Update an existing program preferences and regenerate exercises
+  Future<void> updateProgram({
+    required String programId,
+    required String clientId,
+    required String trainerId,
+    String? name,
+    String? description,
+    TrainingSplit? trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
+  }) async {
+    debugPrint('🟢 [PROVIDER] updateProgram started');
+    debugPrint('🟢 [PROVIDER] programId: $programId');
+
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      // Step 1: Update program preferences
+      debugPrint('🟢 [PROVIDER] Step 1: Updating program preferences...');
+      final updateResult = await _repository.updateProgram(
+        programId: programId,
+        name: name,
+        description: description,
+        trainingSplit: trainingSplit,
+        focusAreas: focusAreas,
+        preferredMovementGroups: preferredMovementGroups,
+      );
+
+      await updateResult.fold(
+        (failure) async {
+          debugPrint('🔴 [PROVIDER] Program update FAILED: ${failure.message}');
+          state = state.copyWith(
+            isLoading: false,
+            error: failure.message,
+          );
+        },
+        (program) async {
+          debugPrint('🟢 [PROVIDER] Program updated: ${program.id}');
+
+          // Step 2: Generate new exercises based on updated preferences
+          // Edge function fetches client's goals from accounts table
+          debugPrint('🟢 [PROVIDER] Step 2: Regenerating exercises...');
+          final exercisesResult = await _repository.generateExercisesForProgram(
+            clientId: clientId,
+            programId: program.id,
+            trainerId: trainerId,
+            trainingSplit: trainingSplit ?? program.trainingSplit,
+            focusAreas: focusAreas ?? program.focusAreas,
+            preferredMovementGroups: preferredMovementGroups ?? program.preferredMovementGroups,
+          );
+
+          await exercisesResult.fold(
+            (failure) async {
+              debugPrint('🔴 [PROVIDER] Exercise regeneration FAILED: ${failure.message}');
+              state = state.copyWith(
+                program: program,
+                isLoading: false,
+                error: 'Program updated but exercise generation failed: ${failure.message}',
+              );
+            },
+            (sessionData) async {
+              debugPrint('🟢 [PROVIDER] Regenerated ${sessionData.exercises.length} exercises');
+
+              final programWithExercises = program.copyWith(
+                generatedExercises: sessionData.exercises,
+              );
+
+              state = state.copyWith(
+                program: programWithExercises,
+                isLoading: false,
+              );
+              debugPrint('🟢 [PROVIDER] State updated with updated program and exercises');
+            },
+          );
+        },
+      );
+    } catch (e, stackTrace) {
+      debugPrint('🔴 [PROVIDER] EXCEPTION: $e');
+      debugPrint('🔴 [PROVIDER] STACK: $stackTrace');
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Save program preferences only (without generating exercises)
+  /// Used when user just wants to save the program direction/options
+  Future<bool> saveProgramPreferencesOnly({
+    required String clientId,
+    required String trainerId,
+    required String name,
+    String? description,
+    required TrainingSplit trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
+    String? existingProgramId, // If provided, update instead of create
+  }) async {
+    debugPrint('🟢 [PROVIDER] saveProgramPreferencesOnly started');
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      if (existingProgramId != null) {
+        // Update existing program
+        final result = await _repository.updateProgram(
+          programId: existingProgramId,
+          name: name,
+          description: description,
+          trainingSplit: trainingSplit,
+          focusAreas: focusAreas,
+          preferredMovementGroups: preferredMovementGroups,
+        );
+
+        return result.fold(
+          (failure) {
+            debugPrint('🔴 [PROVIDER] Program update FAILED: ${failure.message}');
+            state = state.copyWith(isLoading: false, error: failure.message);
+            return false;
+          },
+          (program) {
+            debugPrint('🟢 [PROVIDER] Program preferences saved: ${program.id}');
+            state = state.copyWith(program: program, isLoading: false);
+            return true;
+          },
+        );
+      } else {
+        // Create new program
+        final result = await _repository.createProgram(
+          clientId: clientId,
+          trainerId: trainerId,
+          name: name,
+          description: description,
+          trainingSplit: trainingSplit,
+          focusAreas: focusAreas,
+          preferredMovementGroups: preferredMovementGroups,
+        );
+
+        return result.fold(
+          (failure) {
+            debugPrint('🔴 [PROVIDER] Program creation FAILED: ${failure.message}');
+            state = state.copyWith(isLoading: false, error: failure.message);
+            return false;
+          },
+          (program) {
+            debugPrint('🟢 [PROVIDER] Program preferences saved: ${program.id}');
+            state = state.copyWith(program: program, isLoading: false);
+            return true;
+          },
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('🔴 [PROVIDER] EXCEPTION: $e');
+      debugPrint('🔴 [PROVIDER] STACK: $stackTrace');
+      state = state.copyWith(isLoading: false, error: e.toString());
+      return false;
+    }
+  }
+
   /// Clear current program
   void clear() {
-    state = const ProgramGenerationState();
+    state = const ProgramCreationState();
+  }
+
+  /// Update program's lastSessionFocus after session completion
+  Future<void> updateProgramLastSessionFocus({
+    required String programId,
+    required String lastSessionFocus,
+  }) async {
+    debugPrint('🟢 [PROVIDER] updateProgramLastSessionFocus: $lastSessionFocus');
+    try {
+      await _repository.updateProgramLastSessionFocus(
+        programId: programId,
+        lastSessionFocus: lastSessionFocus,
+      );
+      debugPrint('🟢 [PROVIDER] lastSessionFocus updated successfully');
+    } catch (e) {
+      debugPrint('🔴 [PROVIDER] Failed to update lastSessionFocus: $e');
+    }
   }
 }
 
-/// Provider for program generation
-final programGenerationProvider =
-    StateNotifierProvider<ProgramGenerationNotifier, ProgramGenerationState>(
-  (ref) => ProgramGenerationNotifier(ref.read(aiWorkoutRepositoryProvider)),
+/// Provider for program creation
+final programCreationProvider =
+    StateNotifierProvider<ProgramCreationNotifier, ProgramCreationState>(
+  (ref) => ProgramCreationNotifier(ref.read(aiWorkoutRepositoryProvider)),
 );
+
+/// Backward compatibility alias for programGenerationProvider
+/// TODO: Remove after all usages are migrated to programCreationProvider
+final programGenerationProvider = programCreationProvider;
+
+/// State alias for backward compatibility
+typedef ProgramGenerationState = ProgramCreationState;
 
 /// Provider for client programs list
 final clientProgramsProvider = FutureProvider.family<
@@ -198,20 +429,23 @@ final activeProgramProvider = FutureProvider.family<
   },
 );
 
-/// Provider for exercise alternatives
-final exerciseAlternativesProvider = FutureProvider.family<
-    List<ExerciseAlternative>,
-    ({String exerciseId, String clientId, DifficultyFeedback? feedback})>(
-  (ref, params) async {
-    final repository = ref.read(aiWorkoutRepositoryProvider);
-    final result = await repository.getAlternatives(
-      exerciseId: params.exerciseId,
-      clientId: params.clientId,
-      feedbackHint: params.feedback,
-    );
-    return result.fold((_) => [], (alternatives) => alternatives);
-  },
-);
+/// Direct method to check for active program (bypasses provider caching)
+Future<WorkoutProgramEntity?> checkActiveProgram(
+  AIWorkoutRepository repository,
+  String clientId,
+) async {
+  final result = await repository.getActiveProgram(clientId);
+  return result.fold(
+    (failure) {
+      debugPrint('🔴 [checkActiveProgram] Failure: ${failure.message}');
+      return null;
+    },
+    (program) {
+      debugPrint('🟢 [checkActiveProgram] Success: ${program?.id}');
+      return program;
+    },
+  );
+}
 
 /// Provider for AI exercise reasoning
 final exerciseReasoningProvider = FutureProvider.family<
@@ -258,6 +492,7 @@ class SessionFeedbackState {
 }
 
 /// Notifier for session feedback
+/// Handles real-time difficulty feedback and alternative suggestions during sessions
 class SessionFeedbackNotifier extends StateNotifier<SessionFeedbackState> {
   final AIWorkoutRepository _repository;
 
@@ -313,8 +548,46 @@ class SessionFeedbackNotifier extends StateNotifier<SessionFeedbackState> {
   }
 }
 
-/// Provider for session feedback
-final sessionFeedbackProvider =
-    StateNotifierProvider<SessionFeedbackNotifier, SessionFeedbackState>(
-  (ref) => SessionFeedbackNotifier(ref.read(aiWorkoutRepositoryProvider)),
+/// Provider for session feedback (per-exercise state)
+/// Each exercise has its own feedback state keyed by exerciseId
+final sessionFeedbackProvider = StateNotifierProvider.family<
+    SessionFeedbackNotifier, SessionFeedbackState, String>(
+  (ref, exerciseId) => SessionFeedbackNotifier(
+    ref.read(aiWorkoutRepositoryProvider),
+  ),
+);
+
+/// Provider for fetching similar exercises based on movement pattern
+/// Returns up to 6 exercises with similar movement patterns for swapping
+final similarExercisesProvider = FutureProvider.family<
+    List<ExerciseEntity>, String>(
+  (ref, exerciseId) async {
+    final repository = ref.read(aiWorkoutRepositoryProvider);
+    final result = await repository.getSimilarExercises(
+      exerciseId: exerciseId,
+      limit: 6,
+    );
+    return result.fold(
+      (_) => <ExerciseEntity>[],
+      (exercises) => exercises,
+    );
+  },
+);
+
+/// Provider for alternative exercises (equipment + pattern variations)
+/// Returns exercises grouped by:
+/// 1. Different equipment (same movement pattern)
+/// 2. Same equipment (pattern variations)
+final alternativeExercisesProvider = FutureProvider.family<
+    AlternativeExercisesResult, String>(
+  (ref, exerciseId) async {
+    final repository = ref.read(aiWorkoutRepositoryProvider);
+    final result = await repository.getAlternativeExercises(
+      exerciseId: exerciseId,
+    );
+    return result.fold(
+      (_) => AlternativeExercisesResult.empty(),
+      (data) => data,
+    );
+  },
 );

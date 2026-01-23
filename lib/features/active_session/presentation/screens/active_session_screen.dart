@@ -6,28 +6,36 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../shared/widgets/buttons/primary_button.dart';
 import '../../domain/entities/session_exercise_entity.dart';
+import '../../domain/entities/exercise_set_entity.dart';
+import '../../domain/entities/exercise_entity.dart';
+import '../../domain/services/exercise_recommendation_service.dart';
 import '../providers/session_provider.dart';
 import '../providers/rest_timer_provider.dart';
 import '../widgets/weight_adjuster.dart';
 import '../widgets/rep_selector.dart';
 import '../widgets/rpe_slider.dart';
-import '../widgets/set_tag_selector.dart';
-import '../widgets/set_row.dart';
+import '../widgets/set_comment_selector.dart';
+import '../widgets/exercise_history_display.dart';
+import '../../domain/entities/set_comment.dart';
 import '../widgets/session_timer.dart';
 import '../widgets/rest_timer_widget.dart';
-import '../widgets/quick_log_widget.dart';
 import '../../../ai_workout/presentation/widgets/difficulty_feedback_widget.dart';
 import '../../../ai_workout/domain/entities/session_feedback.dart';
 import '../../../ai_workout/presentation/providers/ai_workout_provider.dart';
+import '../../../muscle_map/domain/entities/muscle_group.dart';
+import '../../../calendar/presentation/providers/calendar_provider.dart';
+import '../widgets/schedule_completion_dialog.dart';
 
 /// Main active session screen for 60-second logging
 class ActiveSessionScreen extends ConsumerStatefulWidget {
   final String clientId;
   final String clientName;
+  final String? programId;
 
   const ActiveSessionScreen({
     required this.clientId,
     required this.clientName,
+    this.programId,
     super.key,
   });
 
@@ -36,6 +44,14 @@ class ActiveSessionScreen extends ConsumerStatefulWidget {
 }
 
 class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,13 +62,51 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   }
 
   Future<void> _initializeSession() async {
+    debugPrint('🟢 [SESSION_SCREEN] _initializeSession: Starting...');
+    debugPrint('🟢 [SESSION_SCREEN] clientId: ${widget.clientId}, programId: ${widget.programId}');
+
     final notifier = ref.read(activeSessionProvider.notifier);
+
+    // If programId is provided, ALWAYS start a new session with the program exercises
+    // This ensures we use the AI-generated exercises from the program
+    if (widget.programId != null) {
+      debugPrint('🟢 [SESSION_SCREEN] ProgramId provided, starting NEW session with exercises');
+
+      // Get exercises from the program creation provider (held in memory)
+      final programState = ref.read(programCreationProvider);
+      final generatedExercises = programState.program?.generatedExercises ?? [];
+
+      debugPrint('🟢 [SESSION_SCREEN] Found ${generatedExercises.length} exercises in provider state');
+
+      // Convert to list of maps for session creation
+      final exerciseMaps = generatedExercises.map((e) => {
+        'exercise_id': e.exerciseId,
+        'name': e.name,
+        'target_sets': e.targetSets,
+        'target_reps': e.targetReps,
+        'rest_seconds': e.restSeconds,
+      }).toList();
+
+      await notifier.startSession(
+        clientId: widget.clientId,
+        programId: widget.programId,
+        exercises: exerciseMaps,
+      );
+      debugPrint('🟢 [SESSION_SCREEN] Session with program exercises started');
+      return;
+    }
+
+    // No programId - try to load existing active session
     await notifier.loadActiveSession(widget.clientId);
 
-    // If no active session, start a new one
+    // If no active session, start a new empty one
     final state = ref.read(activeSessionProvider);
     if (!state.hasActiveSession) {
+      debugPrint('🟢 [SESSION_SCREEN] No active session, starting new empty session');
       await notifier.startSession(clientId: widget.clientId);
+      debugPrint('🟢 [SESSION_SCREEN] Empty session started');
+    } else {
+      debugPrint('🟢 [SESSION_SCREEN] Active session found: ${state.session?.id}');
     }
   }
 
@@ -69,15 +123,35 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 
     if (success && mounted) {
       debugPrint('🔵 _logSet: Starting rest timer and showing sheet...');
-      // Start rest timer and show it prominently
-      ref.read(restTimerProvider.notifier).startTimer();
 
-      // Show rest timer bottom sheet
-      await _showRestTimerSheet();
-    } else {
+      // Scroll to top of the page
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+
+      // Start rest timer: use user-selected duration if set, else exercise default
+      final timerState = ref.read(restTimerProvider);
+      final restSeconds = timerState.totalSeconds > 0
+          ? timerState.totalSeconds
+          : (state.currentExercise?.restSeconds ?? 90);
+      ref.read(restTimerProvider.notifier).startTimer(seconds: restSeconds);
+    } else if (mounted) {
       debugPrint('🔴 _logSet: Failed or not mounted. success=$success, mounted=$mounted');
       final errorState = ref.read(activeSessionProvider);
       debugPrint('🔴 _logSet: Error: ${errorState.error}');
+
+      // Show error to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorState.error ?? 'Failed to log set. Please try again.'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -90,17 +164,6 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     );
   }
 
-  Future<void> _repeatLastSet() async {
-    HapticFeedback.heavyImpact();
-    final success =
-        await ref.read(activeSessionProvider.notifier).repeatLastSet();
-    if (success && mounted) {
-      // Start rest timer and show it prominently
-      ref.read(restTimerProvider.notifier).startTimer();
-      await _showRestTimerSheet();
-    }
-  }
-
   void _showAddExerciseSheet() {
     showModalBottomSheet(
       context: context,
@@ -110,29 +173,9 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     );
   }
 
-  /// Get recent set presets from current exercise
-  List<SetPreset> _getRecentPresets(SessionExerciseEntity exercise) {
-    // Get unique weight/reps combinations from previous sets
-    final presets = <SetPreset>[];
-    final seen = <String>{};
-
-    for (final set in exercise.sets.reversed) {
-      if (set.weight == null || set.reps == null) continue;
-      final key = '${set.weight}-${set.reps}';
-      if (!seen.contains(key)) {
-        seen.add(key);
-        presets.add(SetPreset(
-          weight: set.weight!,
-          reps: set.reps!,
-        ));
-      }
-      if (presets.length >= 4) break;
-    }
-
-    return presets;
-  }
-
   Future<void> _completeSession() async {
+    debugPrint('🔵 _completeSession: Starting...');
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -151,13 +194,160 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       ),
     );
 
-    if (confirm == true) {
+    debugPrint('🔵 _completeSession: confirm = $confirm');
+
+    if (confirm == true && mounted) {
+      debugPrint('🔵 _completeSession: Calling completeSession on provider...');
+
       final completedSession = await ref
           .read(activeSessionProvider.notifier)
           .completeSession();
 
+      debugPrint('🔵 _completeSession: completedSession = ${completedSession?.id}');
+
       if (completedSession != null && mounted) {
-        context.go('/trainer/session-summary/${completedSession.id}');
+        debugPrint('🔵 _completeSession: Session completed successfully');
+
+        // Handle schedule completion (auto-complete existing or prompt to create)
+        await _handleScheduleCompletion(
+          clientId: widget.clientId,
+          sessionStartTime: completedSession.startedAt,
+        );
+
+        // Provider handles program focus update automatically
+        // Invalidate recent sessions cache
+        ref.invalidate(clientRecentSessionsProvider(widget.clientId));
+
+        if (mounted) {
+          context.go('/trainer/session-summary/${completedSession.id}');
+        }
+      } else if (mounted) {
+        // Show error if session completion failed
+        final errorState = ref.read(activeSessionProvider);
+        debugPrint('🔴 _completeSession: Failed - ${errorState.error}');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorState.error ?? 'Failed to complete session. Please try again.'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle schedule completion when a session is completed
+  /// - If a matching schedule exists, auto-complete it
+  /// - If no matching schedule, prompt user to add to calendar
+  Future<void> _handleScheduleCompletion({
+    required String clientId,
+    required DateTime? sessionStartTime,
+  }) async {
+    if (sessionStartTime == null) {
+      debugPrint('🔵 _handleScheduleCompletion: No session start time, skipping');
+      return;
+    }
+
+    final repository = ref.read(scheduleRepositoryProvider);
+    if (repository == null) {
+      debugPrint('🔵 _handleScheduleCompletion: No repository available, skipping');
+      return;
+    }
+
+    debugPrint('🔵 _handleScheduleCompletion: Looking for matching schedule...');
+
+    // Try to find a matching schedule
+    final findResult = await repository.findScheduleForSession(
+      clientId: clientId,
+      sessionStartTime: sessionStartTime,
+      toleranceMinutes: 30,
+    );
+
+    final existingSchedule = findResult.fold((_) => null, (schedule) => schedule);
+
+    if (existingSchedule != null) {
+      // Auto-complete the existing schedule
+      debugPrint('🔵 _handleScheduleCompletion: Found schedule ${existingSchedule.id}, marking as completed');
+      await repository.markAsCompleted(existingSchedule.id);
+
+      // Invalidate calendar cache to reflect the change
+      ref.invalidate(schedulesProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Schedule marked as completed'),
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      // No matching schedule found - ask user if they want to create one
+      debugPrint('🔵 _handleScheduleCompletion: No matching schedule, showing dialog');
+
+      if (!mounted) return;
+
+      final result = await ScheduleCompletionDialog.show(
+        context,
+        sessionStartTime: sessionStartTime,
+        clientName: widget.clientName,
+      );
+
+      if (result != null && mounted) {
+        debugPrint('🔵 _handleScheduleCompletion: User chose to add schedule');
+
+        final createResult = await repository.createCompletedSchedule(
+          clientId: clientId,
+          scheduledAt: result.scheduledAt,
+          durationMinutes: result.durationMinutes,
+        );
+
+        createResult.fold(
+          (failure) {
+            debugPrint('🔴 _handleScheduleCompletion: Failed to create schedule - ${failure.message}');
+          },
+          (schedule) {
+            debugPrint('🔵 _handleScheduleCompletion: Schedule created ${schedule.id}');
+            // Invalidate calendar cache
+            ref.invalidate(schedulesProvider);
+          },
+        );
+      } else {
+        debugPrint('🔵 _handleScheduleCompletion: User skipped adding schedule');
+      }
+    }
+  }
+
+  Future<void> _showCancelConfirmation() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('세션 취소'),
+        content: const Text('이 세션을 취소하시겠습니까?\n모든 기록이 삭제됩니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('계속하기'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('세션 취소'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      final success =
+          await ref.read(activeSessionProvider.notifier).cancelSession();
+      if (success && mounted) {
+        context.go('/trainer');
       }
     }
   }
@@ -193,6 +383,10 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _showCancelConfirmation,
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -264,6 +458,18 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     final currentExercise = state.currentExercise;
     if (currentExercise == null) return _buildEmptyState();
 
+    // Global completed sets: sum of all sets across ALL exercises in session
+    final allExercises = state.session!.exercises;
+    final completedSets = allExercises.fold<int>(
+      0,
+      (sum, exercise) => sum + exercise.sets.length,
+    );
+    // Global target sets: sum of all target sets (null if any exercise has no target)
+    final hasAllTargets = allExercises.every((e) => e.targetSets != null);
+    final targetSets = hasAllTargets
+        ? allExercises.fold<int>(0, (sum, e) => sum + (e.targetSets ?? 0))
+        : null;
+
     return Column(
       children: [
         // Exercise tabs
@@ -277,10 +483,21 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
         // Main logging area
         Expanded(
           child: SingleChildScrollView(
+            controller: _scrollController,
             padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Session sets history (all exercises, in order)
+                _SessionSetsHistory(
+                  exercises: state.session!.exercises,
+                ),
+                // Sets completed indicator (above exercise name)
+                _SetsCompletedHeader(
+                  completedSets: completedSets,
+                  targetSets: targetSets,
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 // Current exercise header
                 Text(
                   currentExercise.exercise.displayName,
@@ -291,124 +508,135 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                   ),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                // Inline rest timer (below exercise name)
+                _InlineRestTimer(
+                  onEditTap: () => RestTimerBottomSheet.show(context),
+                ),
                 const SizedBox(height: AppSpacing.md),
-                // Difficulty feedback (AI feature)
-                _DifficultyFeedbackSection(
-                  sessionExerciseId: currentExercise.id,
-                  exerciseId: currentExercise.exercise.id,
-                  clientId: widget.clientId,
+                // Two-column layout
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // LEFT Column (60%) - Comment-related
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Difficulty feedback (AI feature)
+                          _DifficultyFeedbackSection(
+                            sessionExerciseId: currentExercise.id,
+                            exerciseId: currentExercise.exercise.id,
+                            clientId: widget.clientId,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // Exercise history (PR and last session)
+                          ExerciseHistoryDisplay(
+                            pr: state.exercisePR,
+                            lastSessionSets: state.lastSessionSets,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // Rest duration selector
+                          _RestDurationSelector(),
+                          const SizedBox(height: AppSpacing.md),
+                          // Comments (coaching cues)
+                          SetCommentSelector(
+                            selectedComments: state.currentComments,
+                            commentDetails: state.currentCommentDetails,
+                            onChanged: (comments) {
+                              ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setComments(comments);
+                            },
+                            onDetailsChanged: (details) {
+                              ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setCommentDetails(details);
+                            },
+                            movementGroup:
+                                currentExercise.exercise.movementGroup,
+                            compact: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    // RIGHT Column (40%) - Record-related
+                    Expanded(
+                      flex: 4,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Weight adjuster
+                          const Text(
+                            'Weight',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.neutral700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          WeightAdjuster(
+                            weight: state.currentWeight,
+                            onChanged: (weight) {
+                              ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setWeight(weight);
+                            },
+                            compact: true,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // Rep selector
+                          const Text(
+                            'Reps',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.neutral700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          RepSelector(
+                            reps: state.currentReps,
+                            onChanged: (reps) {
+                              ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setReps(reps);
+                            },
+                            compact: true,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // RPE slider
+                          const Text(
+                            'RPE',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.neutral700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          RpeSlider(
+                            rpe: state.currentRpe,
+                            onChanged: (rpe) {
+                              ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setRpe(rpe);
+                            },
+                            compact: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                // Set history
-                if (currentExercise.sets.isNotEmpty) ...[
-                  Text(
-                    'Sets',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.neutral700,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ...currentExercise.sets.map((set) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: SetRow(set: set),
-                      )),
-                  const SizedBox(height: AppSpacing.lg),
-                ],
-                // Weight adjuster
-                const Text(
-                  'Weight',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral700,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                WeightAdjuster(
-                  weight: state.currentWeight,
-                  onChanged: (weight) {
-                    ref.read(activeSessionProvider.notifier).setWeight(weight);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                // Rep selector
-                const Text(
-                  'Reps',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral700,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                RepSelector(
-                  reps: state.currentReps,
-                  onChanged: (reps) {
-                    ref.read(activeSessionProvider.notifier).setReps(reps);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                // RPE slider
-                const Text(
-                  'RPE (optional)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral700,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                RpeSlider(
-                  rpe: state.currentRpe,
-                  onChanged: (rpe) {
-                    ref.read(activeSessionProvider.notifier).setRpe(rpe);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                // Tags
-                const Text(
-                  'Tags (optional)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral700,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                SetTagSelector(
-                  selectedTags: state.currentTags,
-                  onChanged: (tags) {
-                    ref.read(activeSessionProvider.notifier).setTags(tags);
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                // Quick log section (Repeat Last Set)
-                if (state.canRepeatLastSet) ...[
-                  QuickLogWidget(
-                    lastWeight: state.lastSetOfCurrentExercise?.weight,
-                    lastReps: state.lastSetOfCurrentExercise?.reps,
-                    onRepeatLastSet: _repeatLastSet,
-                    canRepeat: true,
-                    recentPresets: _getRecentPresets(currentExercise),
-                    onPresetTap: (weight, reps) {
-                      ref.read(activeSessionProvider.notifier).setWeight(weight);
-                      ref.read(activeSessionProvider.notifier).setReps(reps);
-                    },
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-                // Log set button
-                PrimaryButton(
-                  label: 'Set complete',
-                  onPressed: _logSet,
+                // Log set button or Skip rest button
+                _SetCompleteOrSkipButton(
                   isLoading: state.isLoading,
-                  icon: Icons.check,
+                  onSetComplete: _logSet,
                 ),
                 const SizedBox(height: AppSpacing.lg),
               ],
@@ -500,7 +728,7 @@ class _ExerciseTabs extends StatelessWidget {
   }
 }
 
-/// Bottom sheet for adding exercises
+/// Bottom sheet for adding exercises - grouped by movement pattern with smart recommendations
 class _ExercisePickerSheet extends ConsumerStatefulWidget {
   final String clientId;
 
@@ -512,11 +740,31 @@ class _ExercisePickerSheet extends ConsumerStatefulWidget {
 
 class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
   String _searchQuery = '';
+  MuscleGroup? _selectedMuscleGroup;
+  bool _isRecommendationsExpanded = false;  // Toggle for expand/collapse recommendations
+
+  /// Get Korean display name for movement group
+  String _getGroupDisplayName(String group) {
+    return MovementGroup.getDisplayNameKo(group);
+  }
+
+  /// Group exercises by movement group
+  Map<String, List<ExerciseEntity>> _groupByMovementGroup(List<ExerciseEntity> exercises) {
+    final grouped = <String, List<ExerciseEntity>>{};
+    for (final exercise in exercises) {
+      final group = exercise.movementGroup;
+      grouped.putIfAbsent(group, () => []).add(exercise);
+    }
+    return grouped;
+  }
 
   @override
   Widget build(BuildContext context) {
     final exercisesAsync = ref.watch(exerciseLibraryProvider(_searchQuery.isEmpty ? null : _searchQuery));
-    final recentAsync = ref.watch(recentExercisesProvider(widget.clientId));
+    final recommendationsAsync = ref.watch(exerciseRecommendationsProvider(widget.clientId));
+    final sessionState = ref.watch(activeSessionProvider);
+    final currentExercise = sessionState.currentExercise;
+    final currentGroup = currentExercise?.exercise.movementGroup;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -543,7 +791,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
               children: [
                 const Expanded(
                   child: Text(
-                    'Add Exercise',
+                    '운동 추가',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -563,7 +811,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
             child: TextField(
               onChanged: (value) => setState(() => _searchQuery = value),
               decoration: InputDecoration(
-                hintText: 'Search exercises...',
+                hintText: '운동 검색...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -571,40 +819,282 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
               ),
             ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          // Content
+          const SizedBox(height: AppSpacing.sm),
+          // Muscle group navigation chips
+          SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              children: [
+                // "All" chip
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: const Text('전체'),
+                    selected: _selectedMuscleGroup == null,
+                    onSelected: (_) => setState(() => _selectedMuscleGroup = null),
+                    backgroundColor: AppColors.neutral100,
+                    selectedColor: AppColors.primary.withValues(alpha: 0.2),
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: _selectedMuscleGroup == null ? FontWeight.w600 : FontWeight.w400,
+                      color: _selectedMuscleGroup == null ? AppColors.primary : AppColors.neutral700,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    visualDensity: VisualDensity.compact,
+                    showCheckmark: false,
+                  ),
+                ),
+                // Muscle group chips (주요 그룹만 표시)
+                ...[
+                  MuscleGroup.chest,
+                  MuscleGroup.back,
+                  MuscleGroup.shoulders,
+                  MuscleGroup.biceps,
+                  MuscleGroup.triceps,
+                  MuscleGroup.quadriceps,
+                  MuscleGroup.hamstrings,
+                  MuscleGroup.glutes,
+                  MuscleGroup.core,
+                ].map((group) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: Text(group.displayNameKo),
+                    selected: _selectedMuscleGroup == group,
+                    onSelected: (_) => setState(() {
+                      _selectedMuscleGroup = _selectedMuscleGroup == group ? null : group;
+                    }),
+                    backgroundColor: AppColors.neutral100,
+                    selectedColor: AppColors.primary.withValues(alpha: 0.2),
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: _selectedMuscleGroup == group ? FontWeight.w600 : FontWeight.w400,
+                      color: _selectedMuscleGroup == group ? AppColors.primary : AppColors.neutral700,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    visualDensity: VisualDensity.compact,
+                    showCheckmark: false,
+                  ),
+                )),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          // Content - Grouped by movement pattern with recommendations
           Expanded(
             child: exercisesAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Error: $e')),
-              data: (exercises) {
-                if (exercises.isEmpty) {
-                  return const Center(child: Text('No exercises found'));
+              data: (allExercises) {
+                if (allExercises.isEmpty) {
+                  return const Center(child: Text('운동을 찾을 수 없습니다'));
                 }
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                  itemCount: exercises.length,
-                  itemBuilder: (context, index) {
-                    final exercise = exercises[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: AppColors.primary.withOpacity(0.1),
-                          child: const Icon(
-                            Icons.fitness_center,
-                            color: AppColors.primary,
-                          ),
+
+                // Apply muscle group filter
+                final exercises = _selectedMuscleGroup == null
+                    ? allExercises
+                    : allExercises.where((e) {
+                        final muscleGroupStr = e.muscleGroup?.toLowerCase();
+                        if (muscleGroupStr == null) return false;
+                        return muscleGroupStr == _selectedMuscleGroup!.key ||
+                               muscleGroupStr == _selectedMuscleGroup!.name;
+                      }).toList();
+
+                if (exercises.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: AppColors.neutral400),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          '${_selectedMuscleGroup!.displayNameKo} 운동이 없습니다',
+                          style: const TextStyle(color: AppColors.neutral500),
                         ),
-                        title: Text(exercise.displayName),
-                        subtitle: Text(exercise.muscleGroup ?? exercise.movementPattern),
-                        onTap: () {
-                          ref.read(activeSessionProvider.notifier).addExercise(exercise);
-                          Navigator.pop(context);
-                        },
+                        const SizedBox(height: AppSpacing.sm),
+                        TextButton(
+                          onPressed: () => setState(() => _selectedMuscleGroup = null),
+                          child: const Text('전체 보기'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Get recommendations data
+                final recommendationsState = recommendationsAsync.valueOrNull;
+                final recommendations = recommendationsState?.recommendations ?? [];
+                final recommendedGroupOrder = recommendationsState?.recommendedGroupOrder ?? MovementGroup.all;
+
+                // Group exercises by movement group
+                final grouped = _groupByMovementGroup(exercises);
+
+                // Build sorted groups list (simple: just use recommended order)
+                final sortedGroups = _searchQuery.isNotEmpty
+                    ? MovementGroup.all
+                    : recommendedGroupOrder;
+
+                // Build list with section headers
+                final items = <Widget>[];
+
+                // Add contextual recommendations section (only when not searching and no filter)
+                if (_searchQuery.isEmpty && _selectedMuscleGroup == null) {
+                  // Get contextual recommendations from new provider
+                  final contextualRecs = ref.watch(contextualRecommendationsProvider(widget.clientId));
+
+                  if (contextualRecs.hasComplementary || contextualRecs.hasSupplementary) {
+                    // Show new 2-section panel (complementary + supplementary)
+                    items.add(_buildContextualRecommendationPanel(contextualRecs));
+                  } else if (recommendations.isNotEmpty) {
+                    // Fallback to existing recommendations for empty sessions
+                    items.add(_buildRecommendedSection(recommendations));
+                  } else {
+                    // Empty state message
+                    items.add(_buildEmptyRecommendationState());
+                  }
+                }
+
+                // Add group-based exercises
+                for (final group in sortedGroups) {
+                  final groupExercises = grouped[group];
+                  if (groupExercises == null || groupExercises.isEmpty) continue;
+
+                  // Check if this group is recommended (top 3)
+                  final groupIndex = recommendedGroupOrder.indexOf(group);
+                  final isRecommendedGroup = groupIndex >= 0 && groupIndex < 3;
+
+                  // Section header
+                  items.add(
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: group == currentGroup
+                                  ? AppColors.primary
+                                  : isRecommendedGroup
+                                      ? AppColors.success.withValues(alpha: 0.15)
+                                      : AppColors.neutral200,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              _getGroupDisplayName(group),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: group == currentGroup
+                                    ? AppColors.neutralWhite
+                                    : isRecommendedGroup
+                                        ? AppColors.success
+                                        : AppColors.neutral700,
+                              ),
+                            ),
+                          ),
+                          if (group == currentGroup) ...[
+                            const SizedBox(width: 6),
+                            const Text(
+                              '현재',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ] else if (isRecommendedGroup && _searchQuery.isEmpty) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.thumb_up, size: 10, color: AppColors.success),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    '추천',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const Spacer(),
+                          Text(
+                            '${groupExercises.length}개',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.neutral500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+
+                  // Exercises in this group
+                  for (final exercise in groupExercises) {
+                    // Check if this exercise is in recommendations
+                    final recommendation = recommendations.firstWhere(
+                      (r) => r.exercise.id == exercise.id,
+                      orElse: () => RecommendedExercise(exercise: exercise, score: 0),
+                    );
+                    final isRecommended = recommendation.score > 0 && recommendation.reason.isNotEmpty;
+
+                    items.add(
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: 2,
+                        ),
+                        child: ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: isRecommended
+                                ? AppColors.success.withValues(alpha: 0.15)
+                                : AppColors.primary.withValues(alpha: 0.1),
+                            child: Icon(
+                              Icons.fitness_center,
+                              color: isRecommended ? AppColors.success : AppColors.primary,
+                              size: 18,
+                            ),
+                          ),
+                          title: Text(
+                            exercise.displayName,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            exercise.muscleGroup ?? '',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          onTap: () {
+                            ref.read(activeSessionProvider.notifier).addExercise(exercise);
+                            Navigator.pop(context);
+                          },
+                        ),
                       ),
                     );
-                  },
+                  }
+                }
+
+                return ListView(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xl),
+                  children: items,
                 );
               },
             ),
@@ -613,9 +1103,517 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
       ),
     );
   }
+
+  /// Build the recommended exercises section
+  Widget _buildRecommendedSection(List<RecommendedExercise> recommendations) {
+    // Take top 5 recommendations with reasons
+    final topRecommendations = recommendations
+        .where((r) => r.reason.isNotEmpty)
+        .take(5)
+        .toList();
+
+    if (topRecommendations.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.success,
+                      AppColors.success.withValues(alpha: 0.8),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome, size: 14, color: AppColors.neutralWhite),
+                    SizedBox(width: 4),
+                    Text(
+                      '맞춤 추천',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.neutralWhite,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${topRecommendations.length}개',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.neutral500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Recommended exercises
+        ...topRecommendations.map((rec) => Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 2,
+          ),
+          child: Material(
+            color: AppColors.success.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            child: ListTile(
+              dense: true,
+              leading: CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.success.withValues(alpha: 0.15),
+                child: const Icon(
+                  Icons.fitness_center,
+                  color: AppColors.success,
+                  size: 18,
+                ),
+              ),
+              title: Text(
+                rec.exercise.displayName,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              subtitle: Row(
+                children: [
+                  Text(
+                    rec.exercise.muscleGroup ?? '',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  if (rec.reason.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        rec.reason,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              trailing: const Icon(
+                Icons.add_circle,
+                color: AppColors.success,
+                size: 22,
+              ),
+              onTap: () {
+                ref.read(activeSessionProvider.notifier).addExercise(rec.exercise);
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        )),
+        const Divider(height: 24),
+      ],
+    );
+  }
+
+  /// Build recommended section with same-group exercises (legacy - for fallback)
+  Widget _buildSameGroupRecommendedSection(
+    List<ExerciseEntity> exercises,
+    String group,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header (기존 "맞춤 추천" 스타일 유지)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.success,
+                      AppColors.success.withValues(alpha: 0.8),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome, size: 14, color: AppColors.neutralWhite),
+                    SizedBox(width: 4),
+                    Text(
+                      '맞춤 추천',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.neutralWhite,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // 그룹 배지 추가
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _getGroupDisplayName(group),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.success,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${exercises.length}개',
+                style: const TextStyle(fontSize: 12, color: AppColors.neutral500),
+              ),
+            ],
+          ),
+        ),
+        // Exercise list (기존 스타일 유지)
+        ...exercises.map((exercise) {
+          // Determine if this is an isolation exercise based on category
+          final isIsolation = exercise.category == 'isolation';
+          final tagText = isIsolation ? '고립 운동' : '같은 그룹';
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: 2,
+            ),
+            child: Material(
+              color: AppColors.success.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              child: ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.success.withValues(alpha: 0.15),
+                  child: const Icon(
+                    Icons.fitness_center,
+                    color: AppColors.success,
+                    size: 18,
+                  ),
+                ),
+                title: Text(
+                  exercise.displayName,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+                subtitle: Row(
+                  children: [
+                    Text(
+                      exercise.muscleGroup ?? '',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        tagText,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                trailing: const Icon(
+                  Icons.add_circle,
+                  color: AppColors.success,
+                  size: 22,
+                ),
+                onTap: () {
+                  ref.read(activeSessionProvider.notifier).addExercise(exercise);
+                  Navigator.pop(context);
+                },
+              ),
+            ),
+          );
+        }),
+        const Divider(height: 24),
+      ],
+    );
+  }
+
+  /// Build contextual recommendation panel with 2 sections (complementary + supplementary)
+  Widget _buildContextualRecommendationPanel(ContextualRecommendationsState state) {
+    // Apply display limit based on expanded state
+    final displayLimit = _isRecommendationsExpanded ? 10 : 3;
+    final complementaryToShow = state.complementary.take(displayLimit).toList();
+    final supplementaryToShow = state.supplementary.take(displayLimit).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section 1: Complementary (바로 이어서 하기)
+        if (state.hasComplementary) ...[
+          _buildRecommendationSection(
+            title: '바로 이어서 하기',
+            subtitle: '현재 운동과 연계',
+            recommendations: complementaryToShow,
+            color: AppColors.primary,
+            icon: Icons.arrow_forward,
+            totalCount: state.complementary.length,
+            isExpanded: _isRecommendationsExpanded,
+            onToggle: () => setState(() => _isRecommendationsExpanded = !_isRecommendationsExpanded),
+          ),
+        ],
+
+        // Section 2: Supplementary (보조)
+        if (state.hasSupplementary) ...[
+          _buildRecommendationSection(
+            title: '보조',
+            subtitle: '마무리 운동',
+            recommendations: supplementaryToShow,
+            color: AppColors.success,
+            icon: Icons.fitness_center,
+            totalCount: state.supplementary.length,
+            isExpanded: _isRecommendationsExpanded,
+            onToggle: () => setState(() => _isRecommendationsExpanded = !_isRecommendationsExpanded),
+          ),
+        ],
+
+        const Divider(height: 16),
+      ],
+    );
+  }
+
+  /// Build a single recommendation section
+  Widget _buildRecommendationSection({
+    required String title,
+    required String subtitle,
+    required List<LabeledRecommendation> recommendations,
+    required Color color,
+    required IconData icon,
+    required int totalCount,
+    required bool isExpanded,
+    required VoidCallback onToggle,
+  }) {
+    final hasMore = totalCount > 3;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      color,
+                      color.withValues(alpha: 0.8),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 14, color: AppColors.neutralWhite),
+                    const SizedBox(width: 4),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.neutralWhite,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: color.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${recommendations.length}${hasMore ? '/$totalCount' : ''}개',
+                style: const TextStyle(fontSize: 12, color: AppColors.neutral500),
+              ),
+              if (hasMore) ...[
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isExpanded ? '접기' : '더보기',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: color,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          size: 14,
+                          color: color,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        // Recommendation cards
+        ...recommendations.map((rec) => Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 2,
+          ),
+          child: Material(
+            color: color.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            child: ListTile(
+              dense: true,
+              leading: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.fitness_center,
+                  color: color,
+                  size: 18,
+                ),
+              ),
+              title: Text(
+                rec.exercise.displayName,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              subtitle: Row(
+                children: [
+                  Text(
+                    rec.exercise.muscleGroup ?? '',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      rec.labelText,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: color,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              trailing: Icon(
+                Icons.add_circle,
+                color: color,
+                size: 22,
+              ),
+              onTap: () {
+                ref.read(activeSessionProvider.notifier).addExercise(rec.exercise);
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        )),
+      ],
+    );
+  }
+
+  /// Build empty recommendation state message
+  Widget _buildEmptyRecommendationState() {
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.neutral100,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: AppColors.neutral500,
+              size: 20,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                '운동을 먼저 추가해주세요',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.neutral600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-/// Section for difficulty feedback during exercise
+/// Section for alternative exercise button during exercise
 class _DifficultyFeedbackSection extends ConsumerWidget {
   final String sessionExerciseId;
   final String exerciseId;
@@ -629,121 +1627,11 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final feedbackState = ref.watch(sessionFeedbackProvider);
-
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.psychology, size: 16, color: AppColors.primary),
-              const SizedBox(width: 4),
-              Text(
-                'How is ${_getArticle()} exercise?',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.neutral700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          DifficultyFeedbackCompact(
-            currentFeedback: feedbackState.currentFeedback,
-            onFeedback: (feedback) {
-              ref.read(sessionFeedbackProvider.notifier).recordFeedback(
-                    sessionExerciseId: sessionExerciseId,
-                    exerciseId: exerciseId,
-                    clientId: clientId,
-                    feedback: feedback,
-                  );
-            },
-          ),
-          // Show alternatives if available
-          if (feedbackState.alternatives.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
-            const Divider(),
-            const SizedBox(height: AppSpacing.xs),
-            const Text(
-              'Suggested alternatives:',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.neutral700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            ...feedbackState.alternatives.take(2).map(
-                  (alt) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: InkWell(
-                      onTap: () => _swapExercise(context, ref, alt),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: alt.isRecommended
-                              ? AppColors.primary.withValues(alpha: 0.1)
-                              : AppColors.neutral100,
-                          borderRadius: BorderRadius.circular(4),
-                          border: alt.isRecommended
-                              ? Border.all(
-                                  color: AppColors.primary.withValues(alpha: 0.3))
-                              : null,
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                alt.displayName,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            if (alt.isRecommended)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'Rec',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: AppColors.neutralWhite,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.swap_horiz, size: 16),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-          ],
-        ],
-      ),
+    return AlternativeExerciseButton(
+      exerciseId: exerciseId,
+      onAlternativeSelected: (alt) => _swapExercise(context, ref, alt),
     );
   }
-
-  String _getArticle() => 'this';
 
   void _swapExercise(
       BuildContext context, WidgetRef ref, SessionAlternative alt) {
@@ -751,27 +1639,41 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Swap Exercise?'),
-        content: Text('Replace current exercise with ${alt.displayName}?'),
+        title: const Text('대체 운동으로 변경'),
+        content: Text('${alt.displayName}(으)로 변경하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: const Text('취소'),
           ),
           ElevatedButton(
-            onPressed: () {
-              // TODO: Implement exercise swap in session
+            onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Swapped to ${alt.displayName}'),
-                  backgroundColor: AppColors.success,
-                ),
-              );
-              // Clear feedback state
-              ref.read(sessionFeedbackProvider.notifier).clear();
+
+              // Perform the swap
+              final success = await ref
+                  .read(activeSessionProvider.notifier)
+                  .swapExercise(newExerciseId: alt.exerciseId);
+
+              if (context.mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${alt.displayName}(으)로 변경되었습니다'),
+                      backgroundColor: AppColors.success,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('운동 변경에 실패했습니다'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
             },
-            child: const Text('Swap'),
+            child: const Text('변경'),
           ),
         ],
       ),
@@ -785,9 +1687,7 @@ class _RestTimerOverlay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final timerState = ref.watch(restTimerProvider);
     final sessionState = ref.watch(activeSessionProvider);
-    final isComplete = timerState.remainingSeconds == 0 && !timerState.isRunning;
 
     return Container(
       decoration: const BoxDecoration(
@@ -835,51 +1735,676 @@ class _RestTimerOverlay extends ConsumerWidget {
 
               // Rest Timer
               const RestTimerWidget(
-                showPresets: true,
                 showControls: true,
+                showPresets: true,
               ),
               const SizedBox(height: AppSpacing.lg),
 
-              // Action buttons
-              Row(
-                children: [
-                  // Skip rest button
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ref.read(restTimerProvider.notifier).skipTimer();
-                        Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.skip_next),
-                      label: const Text('Skip rest'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
+              // Continue button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    ref.read(restTimerProvider.notifier).skipTimer();
+                    Navigator.pop(context);
+                  },
+                  icon: const Icon(Icons.fitness_center),
+                  label: const Text('Continue'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.neutralWhite,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  const SizedBox(width: AppSpacing.md),
-                  // Next set button
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        ref.read(restTimerProvider.notifier).skipTimer();
-                        Navigator.pop(context);
-                      },
-                      icon: Icon(isComplete ? Icons.fitness_center : Icons.timer),
-                      label: Text(isComplete ? 'Next set' : 'Continue'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.neutralWhite,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Data class for a set with its exercise name
+class _SessionSetWithExercise {
+  final String exerciseName;
+  final ExerciseSetEntity set;
+
+  const _SessionSetWithExercise({
+    required this.exerciseName,
+    required this.set,
+  });
+}
+
+/// Unified session sets history showing all sets in chronological order
+class _SessionSetsHistory extends StatelessWidget {
+  final List<SessionExerciseEntity> exercises;
+
+  const _SessionSetsHistory({required this.exercises});
+
+  List<_SessionSetWithExercise> _getAllSetsInOrder() {
+    final allSets = <_SessionSetWithExercise>[];
+
+    for (final exercise in exercises) {
+      for (final set in exercise.sets) {
+        allSets.add(_SessionSetWithExercise(
+          exerciseName: exercise.exercise.displayName,
+          set: set,
+        ));
+      }
+    }
+
+    // Sort by completedAt timestamp
+    allSets.sort((a, b) => a.set.completedAt.compareTo(b.set.completedAt));
+
+    return allSets;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allSets = _getAllSetsInOrder();
+
+    if (allSets.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.history,
+              size: 16,
+              color: AppColors.neutral700,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Session History',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.neutral700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${allSets.length} sets',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.neutral500,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          ),
+          child: Column(
+            children: [
+              // Header row
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.neutral100,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(AppSpacing.radiusMd),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '#',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.neutral500,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 3,
+                      child: Text(
+                        'Exercise',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.neutral500,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 60,
+                      child: Text(
+                        'Weight',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.neutral500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 50,
+                      child: Text(
+                        'Reps',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.neutral500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 45,
+                      child: Text(
+                        'RPE',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.neutral500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Set rows
+              ...allSets.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                final isLast = index == allSets.length - 1;
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    border: isLast
+                        ? null
+                        : Border(
+                            bottom: BorderSide(
+                              color: AppColors.neutral200,
+                              width: 0.5,
+                            ),
+                          ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Set number
+                      SizedBox(
+                        width: 28,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: item.set.isWarmup
+                                ? AppColors.info.withOpacity(0.1)
+                                : item.set.isPR
+                                    ? AppColors.warning.withOpacity(0.2)
+                                    : AppColors.neutral100,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            item.set.isWarmup ? 'W' : '${index + 1}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: item.set.isWarmup
+                                  ? AppColors.info
+                                  : item.set.isPR
+                                      ? AppColors.warning
+                                      : AppColors.neutral700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Exercise name
+                      Expanded(
+                        flex: 3,
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.exerciseName,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.neutralBlack,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (item.set.isPR) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.warning,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'PR',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.neutralWhite,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      // Weight
+                      SizedBox(
+                        width: 60,
+                        child: Text(
+                          item.set.weight != null
+                              ? '${item.set.weight!.toStringAsFixed(item.set.weight! % 1 == 0 ? 0 : 1)}'
+                              : '-',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.neutralBlack,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      // Reps
+                      SizedBox(
+                        width: 50,
+                        child: Text(
+                          item.set.reps?.toString() ?? '-',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.neutralBlack,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      // RPE
+                      SizedBox(
+                        width: 45,
+                        child: Text(
+                          item.set.rpeDisplay,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: _getRpeColor(item.set.rpe),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+      ],
+    );
+  }
+
+  Color _getRpeColor(double? rpe) {
+    if (rpe == null) return AppColors.neutral500;
+    if (rpe <= 6) return AppColors.success;
+    if (rpe <= 7) return AppColors.secondary;
+    if (rpe <= 8) return AppColors.warning;
+    return AppColors.error;
+  }
+}
+
+/// Sets completed header widget
+class _SetsCompletedHeader extends StatelessWidget {
+  final int completedSets;
+  final int? targetSets;
+
+  const _SetsCompletedHeader({
+    required this.completedSets,
+    this.targetSets,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              size: 18,
+              color: AppColors.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              targetSets != null
+                  ? '완료: $completedSets / $targetSets 세트'
+                  : '완료: $completedSets 세트',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Inline rest timer widget shown below exercise title
+class _InlineRestTimer extends ConsumerWidget {
+  final VoidCallback onEditTap;
+
+  const _InlineRestTimer({required this.onEditTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final timerState = ref.watch(restTimerProvider);
+
+    // Only show when timer is running or paused
+    if (!timerState.isRunning && !timerState.isPaused) {
+      return const SizedBox.shrink();
+    }
+
+    final isWarning = timerState.remainingSeconds <= 10;
+    final isComplete = timerState.remainingSeconds == 0 && !timerState.isRunning;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isComplete
+            ? AppColors.success.withOpacity(0.1)
+            : isWarning
+                ? AppColors.warning.withOpacity(0.1)
+                : AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isComplete
+              ? AppColors.success.withOpacity(0.3)
+              : isWarning
+                  ? AppColors.warning.withOpacity(0.3)
+                  : AppColors.primary.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Timer icon with progress
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: timerState.progress,
+                  strokeWidth: 3,
+                  backgroundColor: AppColors.neutral200,
+                  valueColor: AlwaysStoppedAnimation(
+                    isComplete
+                        ? AppColors.success
+                        : isWarning
+                            ? AppColors.warning
+                            : AppColors.primary,
+                  ),
+                ),
+                Icon(
+                  isComplete ? Icons.check : Icons.timer,
+                  size: 12,
+                  color: isComplete
+                      ? AppColors.success
+                      : isWarning
+                          ? AppColors.warning
+                          : AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Timer text
+          Text(
+            isComplete ? 'REST DONE' : 'Rest: ${timerState.formattedTime}',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: isComplete
+                  ? AppColors.success
+                  : isWarning
+                      ? AppColors.warning
+                      : AppColors.primary,
+            ),
+          ),
+          const Spacer(),
+          // Pause/Resume button
+          if (!isComplete)
+            IconButton(
+              onPressed: () {
+                if (timerState.isRunning) {
+                  ref.read(restTimerProvider.notifier).pauseTimer();
+                } else {
+                  ref.read(restTimerProvider.notifier).resumeTimer();
+                }
+              },
+              icon: Icon(
+                timerState.isRunning ? Icons.pause : Icons.play_arrow,
+                color: isWarning ? AppColors.warning : AppColors.primary,
+              ),
+              style: IconButton.styleFrom(
+                backgroundColor: isWarning
+                    ? AppColors.warning.withOpacity(0.2)
+                    : AppColors.primary.withOpacity(0.2),
+                minimumSize: const Size(36, 36),
+              ),
+            ),
+          const SizedBox(width: 4),
+          // Skip button
+          if (!isComplete)
+            IconButton(
+              onPressed: () {
+                ref.read(restTimerProvider.notifier).skipTimer();
+              },
+              icon: const Icon(Icons.skip_next),
+              tooltip: '건너뛰기',
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.neutral200,
+                minimumSize: const Size(36, 36),
+              ),
+            ),
+          const SizedBox(width: 4),
+          // Edit button
+          TextButton(
+            onPressed: onEditTap,
+            style: TextButton.styleFrom(
+              foregroundColor: isComplete
+                  ? AppColors.success
+                  : isWarning
+                      ? AppColors.warning
+                      : AppColors.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+            child: const Text('Edit'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Goal sets indicator widget
+class _GoalSetsIndicator extends StatelessWidget {
+  final int targetSets;
+
+  const _GoalSetsIndicator({required this.targetSets});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.flag_outlined,
+            size: 16,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '목표: $targetSets세트',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.neutral700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Rest duration selector widget
+class _RestDurationSelector extends ConsumerWidget {
+  const _RestDurationSelector();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final timerState = ref.watch(restTimerProvider);
+    final currentDuration = timerState.totalSeconds;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 16,
+                color: AppColors.neutral700,
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Rest Duration',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.neutral700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [60, 90, 120, 180].map((seconds) {
+              final isSelected = currentDuration == seconds;
+              final label = seconds >= 60
+                  ? '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}'
+                  : '${seconds}s';
+
+              return GestureDetector(
+                onTap: () {
+                  ref.read(restTimerProvider.notifier).setDefaultDuration(seconds);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary
+                        : AppColors.neutral100,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected
+                          ? AppColors.neutralWhite
+                          : AppColors.neutral700,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Button that shows "Set complete" or "Skip rest" depending on rest timer state
+class _SetCompleteOrSkipButton extends ConsumerWidget {
+  final bool isLoading;
+  final VoidCallback onSetComplete;
+
+  const _SetCompleteOrSkipButton({
+    required this.isLoading,
+    required this.onSetComplete,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final timerState = ref.watch(restTimerProvider);
+    final isRestTimerRunning = timerState.isRunning || timerState.isPaused;
+
+    if (isRestTimerRunning) {
+      return PrimaryButton(
+        label: 'Skip rest (${timerState.formattedTime})',
+        onPressed: () {
+          ref.read(restTimerProvider.notifier).skipTimer();
+        },
+        icon: Icons.skip_next,
+        backgroundColor: AppColors.neutral600,
+      );
+    }
+
+    return PrimaryButton(
+      label: 'Set complete',
+      onPressed: onSetComplete,
+      isLoading: isLoading,
+      icon: Icons.check,
     );
   }
 }

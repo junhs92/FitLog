@@ -1,8 +1,11 @@
 import 'package:dartz/dartz.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../core/error/failures.dart';
+import '../../../active_session/domain/entities/exercise_entity.dart';
 import '../../domain/entities/workout_program.dart';
 import '../../domain/entities/session_feedback.dart';
 import '../../domain/entities/ai_reasoning.dart';
+import '../../domain/entities/alternative_exercise.dart';
 import '../../domain/repositories/ai_workout_repository.dart';
 import '../datasources/ai_workout_remote_datasource.dart';
 
@@ -13,29 +16,24 @@ class AIWorkoutRepositoryImpl implements AIWorkoutRepository {
   AIWorkoutRepositoryImpl(this._remoteDataSource);
 
   @override
-  Future<TrainingGoal?> getPreviousGoal(String clientId) async {
-    return _remoteDataSource.getPreviousGoal(clientId);
-  }
-
-  @override
-  Future<Either<Failure, WorkoutProgramEntity>> generateProgram({
+  Future<Either<Failure, WorkoutProgramEntity>> createProgram({
     required String clientId,
     required String trainerId,
-    required TrainingGoal primaryGoal,
-    TrainingGoal? secondaryGoal,
-    int? durationWeeks,
-    int? sessionsPerWeek,
-    List<String>? excludedExerciseIds,
-    List<String>? preferredEquipment,
+    required String name,
+    String? description,
+    required TrainingSplit trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
   }) async {
     try {
-      final program = await _remoteDataSource.generateProgram(
+      final program = await _remoteDataSource.createProgram(
         clientId: clientId,
         trainerId: trainerId,
-        primaryGoal: primaryGoal,
-        secondaryGoal: secondaryGoal,
-        excludedExerciseIds: excludedExerciseIds,
-        preferredEquipment: preferredEquipment,
+        name: name,
+        description: description,
+        trainingSplit: trainingSplit,
+        focusAreas: focusAreas,
+        preferredMovementGroups: preferredMovementGroups,
       );
       return Right(program);
     } catch (e) {
@@ -73,8 +71,11 @@ class AIWorkoutRepositoryImpl implements AIWorkoutRepository {
   ) async {
     try {
       final program = await _remoteDataSource.getActiveProgram(clientId);
+      debugPrint('🔍 [Repository] getActiveProgram result: ${program?.id}');
       return Right(program);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('🔴 [Repository] getActiveProgram error: $e');
+      debugPrint('🔴 [Repository] Stack: $stackTrace');
       return Left(ServerFailure(message: e.toString()));
     }
   }
@@ -96,36 +97,40 @@ class AIWorkoutRepositoryImpl implements AIWorkoutRepository {
   }
 
   @override
-  Future<Either<Failure, ProgramExerciseEntity>> swapExercise({
-    required String programExerciseId,
-    required String newExerciseId,
-    String? reason,
+  Future<Either<Failure, WorkoutProgramEntity>> updateProgram({
+    required String programId,
+    String? name,
+    String? description,
+    TrainingSplit? trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
   }) async {
     try {
-      final exercise = await _remoteDataSource.swapExercise(
-        programExerciseId: programExerciseId,
-        newExerciseId: newExerciseId,
-        reason: reason,
+      final program = await _remoteDataSource.updateProgram(
+        programId: programId,
+        name: name,
+        description: description,
+        trainingSplit: trainingSplit,
+        focusAreas: focusAreas,
+        preferredMovementGroups: preferredMovementGroups,
       );
-      return Right(exercise.toEntity());
+      return Right(program);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<Failure, List<ExerciseAlternative>>> getAlternatives({
-    required String exerciseId,
-    required String clientId,
-    DifficultyFeedback? feedbackHint,
+  Future<Either<Failure, void>> updateProgramLastSessionFocus({
+    required String programId,
+    required String lastSessionFocus,
   }) async {
     try {
-      final alternatives = await _remoteDataSource.getAlternatives(
-        exerciseId: exerciseId,
-        clientId: clientId,
-        feedbackHint: feedbackHint,
+      await _remoteDataSource.updateProgramLastSessionFocus(
+        programId: programId,
+        lastSessionFocus: lastSessionFocus,
       );
-      return Right(alternatives);
+      return const Right(null);
     } catch (e) {
       return Left(ServerFailure(message: e.toString()));
     }
@@ -235,6 +240,77 @@ class AIWorkoutRepositoryImpl implements AIWorkoutRepository {
       await _remoteDataSource.deleteProgram(programId);
       return const Right(null);
     } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, GeneratedSessionData>> generateExercisesForProgram({
+    required String clientId,
+    required String programId,
+    required String trainerId,
+    required TrainingSplit trainingSplit,
+    List<String>? focusAreas,
+    List<String>? preferredMovementGroups,
+  }) async {
+    try {
+      final sessionData = await _remoteDataSource.generateExercisesForProgram(
+        clientId: clientId,
+        programId: programId,
+        trainerId: trainerId,
+        trainingSplit: trainingSplit,
+        focusAreas: focusAreas,
+        preferredMovementGroups: preferredMovementGroups,
+      );
+      return Right(sessionData);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<ExerciseEntity>>> getSimilarExercises({
+    required String exerciseId,
+    int limit = 6,
+  }) async {
+    try {
+      final exercises = await _remoteDataSource.getSimilarExercises(
+        exerciseId: exerciseId,
+        limit: limit,
+      );
+      return Right(exercises.map((json) => ExerciseEntity(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        nameKo: json['name_ko'] as String?,
+        category: json['category'] as String? ?? 'compound',
+        movementGroup: json['movement_group'] as String? ?? 'other',
+        movementDetail: json['movement_detail'] as String?,
+        family: json['family'] as String?,
+        angle: json['angle'] as String?,
+        equipment: json['equipment'] as String?,
+        muscleGroup: json['muscle_group'] as String?,
+        description: json['description'] as String?,
+        videoUrl: json['video_url'] as String?,
+        thumbnailUrl: json['thumbnail_url'] as String?,
+        isCustom: json['is_custom'] as bool? ?? false,
+        trainerId: json['trainer_id'] as String?,
+      )).toList());
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, AlternativeExercisesResult>> getAlternativeExercises({
+    required String exerciseId,
+  }) async {
+    try {
+      final result = await _remoteDataSource.getAlternativeExercises(
+        exerciseId: exerciseId,
+      );
+      return Right(result);
+    } catch (e) {
+      debugPrint('🔴 [Repository] getAlternativeExercises error: $e');
       return Left(ServerFailure(message: e.toString()));
     }
   }

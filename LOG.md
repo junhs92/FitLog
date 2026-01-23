@@ -4,6 +4,63 @@
 
 ---
 
+## 2026-01-23
+
+### Alternative Exercise Feature (대체 운동 기능)
+
+#### 변경 사항
+기존 난이도 피드백 버튼(힘듦, 적당함, 너무 쉬움)을 제거하고, 단일 "대체 운동" 버튼으로 대체
+
+#### 새로운 기능
+- **대체 운동 버튼**: 운동 카드에 인라인으로 표시되는 컴팩트 버튼
+- **Bottom Sheet**: 대체 운동을 두 그룹으로 분류하여 표시
+  - 🔧 다른 장비로: 같은 움직임 패턴, 다른 장비
+  - 🔁 같은 패턴: 같은 장비, 비슷한 변형 운동
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `domain/entities/alternative_exercise.dart` | 신규 - 그룹화된 대체 운동 엔티티 |
+| `data/datasources/ai_workout_remote_datasource.dart` | `getAlternativeExercises()` 메서드 추가 |
+| `domain/repositories/ai_workout_repository.dart` | 인터페이스 메서드 추가 |
+| `data/repositories/ai_workout_repository_impl.dart` | 리포지토리 구현 |
+| `presentation/providers/ai_workout_provider.dart` | `alternativeExercisesProvider` 추가 |
+| `presentation/widgets/difficulty_feedback_widget.dart` | 전체 교체 - 새 UI |
+| `active_session_screen.dart` | 새 버튼 사용하도록 업데이트 |
+
+#### 쿼리 로직
+```sql
+-- 장비 대체 (같은 패턴, 다른 장비)
+SELECT * FROM exercises
+WHERE movement_group = :orig_group
+  AND movement_detail = :orig_detail
+  AND equipment != :orig_equipment
+  AND id != :exerciseId
+
+-- 패턴 대체 (같은 패턴, 같은 장비, 다른 운동)
+SELECT * FROM exercises
+WHERE movement_group = :orig_group
+  AND movement_detail = :orig_detail
+  AND equipment = :orig_equipment
+  AND id != :exerciseId
+```
+
+#### 장비 라벨 매핑
+| Equipment | Korean |
+|-----------|--------|
+| dumbbell | 덤벨 |
+| barbell | 바벨 |
+| cable | 케이블 |
+| machine | 머신 |
+| bodyweight | 맨몸 |
+| smith_machine | 스미스머신 |
+| kettlebell | 케틀벨 |
+
+**상세 문서**: `claudedocs/2026-01-23_alternative_exercise_feature.md`
+
+---
+
 ## 2024-12-08
 
 ### Security: Account Creation via Database Trigger
