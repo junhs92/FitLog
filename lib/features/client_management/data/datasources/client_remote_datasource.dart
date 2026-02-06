@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/utils/timestamp_utils.dart';
 import '../models/client_model.dart';
 
 /// Remote data source for client operations
@@ -130,8 +131,8 @@ class ClientRemoteDataSourceImpl implements ClientRemoteDataSource {
     // End the relationship (don't delete the client account)
     await _client.from('trainer_client_relationships').update({
       'status': 'ended',
-      'relationship_ended_at': DateTime.now().toIso8601String(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'relationship_ended_at': nowLocalIso8601(),
+      'updated_at': nowLocalIso8601(),
     }).eq('trainer_id', trainerAccountId).eq('client_id', id);
   }
 

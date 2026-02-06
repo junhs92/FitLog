@@ -68,13 +68,18 @@ class SetRow extends StatelessWidget {
                   label: 'Weight',
                 ),
               ),
-              // Reps
+              // Reps or Duration (show duration if available, otherwise reps)
               Expanded(
                 flex: 2,
-                child: _SetValueDisplay(
-                  value: set.reps?.toString() ?? '-',
-                  label: 'Reps',
-                ),
+                child: set.duration != null
+                    ? _SetValueDisplay(
+                        value: _formatDuration(set.duration!),
+                        label: 'Time',
+                      )
+                    : _SetValueDisplay(
+                        value: set.reps?.toString() ?? '-',
+                        label: 'Reps',
+                      ),
               ),
               // RPE
               Expanded(
@@ -125,6 +130,15 @@ class SetRow extends StatelessWidget {
     if (rpe <= 7) return AppColors.secondary;
     if (rpe <= 8) return AppColors.warning;
     return AppColors.error;
+  }
+
+  String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds.remainder(60);
+    if (minutes > 0) {
+      return '$minutes:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '0:${seconds.toString().padLeft(2, '0')}';
   }
 }
 

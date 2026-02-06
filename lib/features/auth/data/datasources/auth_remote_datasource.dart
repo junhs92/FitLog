@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 import '../models/user_model.dart';
 
 /// Remote data source for authentication
@@ -42,8 +43,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     await _client
         .from(ApiConstants.accountsTable)
         .update({
-          'last_login_at': DateTime.now().toIso8601String(),
-          'updated_at': DateTime.now().toIso8601String(),
+          'last_login_at': nowLocalIso8601(),
+          'updated_at': nowLocalIso8601(),
         })
         .eq('user_id', response.user!.id);
 
@@ -122,7 +123,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     }
 
     // Add updated_at timestamp
-    data['updated_at'] = DateTime.now().toIso8601String();
+    data['updated_at'] = nowLocalIso8601();
 
     await _client
         .from(ApiConstants.accountsTable)

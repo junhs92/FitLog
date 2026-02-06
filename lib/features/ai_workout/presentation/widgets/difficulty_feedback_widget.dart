@@ -242,11 +242,26 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Equipment alternatives section
+                      // Section 1: Pattern alternatives (같은 장비, 비슷한 운동) - FIRST
+                      if (result.patternAlternatives.isNotEmpty) ...[
+                        _buildSectionHeader(
+                          icon: Icons.repeat,
+                          title: '같은 장비, 비슷한 운동',
+                          subtitle: '동일 장비로 다른 변형',
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ...result.patternAlternatives.map((alt) =>
+                            _AlternativeExerciseItem(
+                              alternative: alt,
+                              onSelect: () => onAlternativeSelected?.call(alt),
+                            )),
+                        const SizedBox(height: AppSpacing.lg),
+                      ],
+                      // Section 2: Equipment alternatives (비슷한 운동 다른 장비)
                       if (result.equipmentAlternatives.isNotEmpty) ...[
                         _buildSectionHeader(
                           icon: Icons.build_outlined,
-                          title: '다른 장비로',
+                          title: '비슷한 운동 다른 장비',
                           subtitle: '같은 움직임, 다른 장비',
                         ),
                         const SizedBox(height: AppSpacing.sm),
@@ -254,15 +269,15 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
                             _buildEquipmentGroup(group)),
                         const SizedBox(height: AppSpacing.lg),
                       ],
-                      // Pattern alternatives section
-                      if (result.patternAlternatives.isNotEmpty) ...[
+                      // Section 3: Accessory exercises (악세서리 운동) - NEW
+                      if (result.accessoryExercises.isNotEmpty) ...[
                         _buildSectionHeader(
-                          icon: Icons.repeat,
-                          title: '같은 패턴',
-                          subtitle: '같은 장비, 비슷한 운동',
+                          icon: Icons.sports_gymnastics,
+                          title: '악세서리 운동',
+                          subtitle: '같은 패턴 고립 운동',
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        ...result.patternAlternatives.map((alt) =>
+                        ...result.accessoryExercises.map((alt) =>
                             _AlternativeExerciseItem(
                               alternative: alt,
                               onSelect: () => onAlternativeSelected?.call(alt),

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/utils/timestamp_utils.dart';
 import '../../../client_management/domain/entities/client_entity.dart';
 import '../../../client_management/presentation/providers/client_provider.dart';
 import '../widgets/today_sessions_card.dart';
@@ -26,23 +27,28 @@ final trainerIdProvider = FutureProvider.autoDispose<String?>((ref) async {
 /// Dashboard stats data
 class DashboardStats {
   final int totalClients;
+  final int activeClients;
   final int todaySessions;
   final int completedSessions;
-  final int weeklySessionsCount;
+  final int noShows;
 
   const DashboardStats({
     required this.totalClients,
+    required this.activeClients,
     required this.todaySessions,
     required this.completedSessions,
-    required this.weeklySessionsCount,
+    this.noShows = 0,
   });
 
   factory DashboardStats.empty() => const DashboardStats(
         totalClients: 0,
+        activeClients: 0,
         todaySessions: 0,
         completedSessions: 0,
-        weeklySessionsCount: 0,
+        noShows: 0,
       );
+
+  int get remainingSessions => todaySessions - completedSessions - noShows;
 }
 
 /// Dashboard data provider
@@ -70,70 +76,86 @@ final dashboardStatsProvider = FutureProvider.autoDispose<DashboardStats>((ref) 
   } catch (_) {
     return DashboardStats(
       totalClients: totalClients,
+      activeClients: 0,
       todaySessions: 0,
       completedSessions: 0,
-      weeklySessionsCount: 0,
     );
   }
 
   if (trainerId == null) {
     return DashboardStats(
       totalClients: totalClients,
+      activeClients: 0,
       todaySessions: 0,
       completedSessions: 0,
-      weeklySessionsCount: 0,
     );
   }
 
-  // Query session stats
+  // Query active clients (clients with remaining sessions in active packages)
+  int activeClients = 0;
+  try {
+    final packagesResponse = await supabase
+        .from('session_packages')
+        .select('client_id, total_sessions, sessions_used')
+        .eq('trainer_id', trainerId)
+        .eq('is_active', true);
+
+    final packages = packagesResponse as List;
+    final activeClientIds = <String>{};
+    for (final pkg in packages) {
+      final total = pkg['total_sessions'] as int? ?? 0;
+      final used = pkg['sessions_used'] as int? ?? 0;
+      if (total > used) {
+        activeClientIds.add(pkg['client_id'] as String);
+      }
+    }
+    activeClients = activeClientIds.length;
+  } catch (_) {
+    // session_packages table might not exist yet
+  }
+
+  // Query schedule stats from client_schedules table (calendar appointments)
   final now = DateTime.now();
   final todayStart = DateTime(now.year, now.month, now.day);
-  final weekStart = todayStart.subtract(const Duration(days: 7));
 
   int todaySessions = 0;
   int completedToday = 0;
-  int weeklyCompleted = 0;
 
   try {
-    // Today's scheduled sessions
+    // Today's scheduled appointments (exclude cancelled)
+    final todayEnd = todayStart.add(const Duration(days: 1));
     final todayResponse = await supabase
-        .from('sessions')
+        .from('client_schedules')
         .select('id')
         .eq('trainer_id', trainerId)
-        .gte('scheduled_at', todayStart.toIso8601String())
-        .lt('scheduled_at', todayStart.add(const Duration(days: 1)).toIso8601String());
+        .neq('status', 'cancelled')
+        .gte('scheduled_at', toLocalIso8601(todayStart))
+        .lt('scheduled_at', toLocalIso8601(todayEnd));
     todaySessions = (todayResponse as List).length;
 
-    // Completed today
+    // Completed appointments today
     final completedTodayResponse = await supabase
-        .from('sessions')
+        .from('client_schedules')
         .select('id')
         .eq('trainer_id', trainerId)
         .eq('status', 'completed')
-        .gte('completed_at', todayStart.toIso8601String());
+        .gte('scheduled_at', toLocalIso8601(todayStart))
+        .lt('scheduled_at', toLocalIso8601(todayEnd));
     completedToday = (completedTodayResponse as List).length;
-
-    // Weekly completed
-    final weeklyResponse = await supabase
-        .from('sessions')
-        .select('id')
-        .eq('trainer_id', trainerId)
-        .eq('status', 'completed')
-        .gte('completed_at', weekStart.toIso8601String());
-    weeklyCompleted = (weeklyResponse as List).length;
   } catch (_) {
-    // Sessions table might not exist yet
+    // client_schedules table might not exist yet
   }
 
   return DashboardStats(
     totalClients: totalClients,
+    activeClients: activeClients,
     todaySessions: todaySessions,
     completedSessions: completedToday,
-    weeklySessionsCount: weeklyCompleted,
   );
 });
 
-/// Today's sessions provider with real data
+/// Today's scheduled appointments provider (from client_schedules table)
+/// This shows trainer's planned appointments for the day from the calendar
 final todaySessionsProvider = FutureProvider.autoDispose<List<SessionPreview>>((ref) async {
   final supabase = Supabase.instance.client;
   final userId = supabase.auth.currentUser?.id;
@@ -156,33 +178,38 @@ final todaySessionsProvider = FutureProvider.autoDispose<List<SessionPreview>>((
     final todayStart = DateTime(now.year, now.month, now.day);
     final todayEnd = todayStart.add(const Duration(days: 1));
 
-    // Query today's sessions with client info
+    // Query today's scheduled appointments with client info (exclude cancelled)
     final response = await supabase
-        .from('sessions')
+        .from('client_schedules')
         .select('''
-          *,
-          client:client_id(full_name, avatar_url)
+          id, client_id, scheduled_at, status,
+          accounts!client_schedules_client_id_fkey(full_name, avatar_url)
         ''')
         .eq('trainer_id', trainerId)
-        .gte('scheduled_at', todayStart.toIso8601String())
-        .lt('scheduled_at', todayEnd.toIso8601String())
+        .neq('status', 'cancelled')
+        .gte('scheduled_at', toLocalIso8601(todayStart))
+        .lt('scheduled_at', toLocalIso8601(todayEnd))
         .order('scheduled_at', ascending: true);
 
     return (response as List).map((json) {
-      final client = json['client'] as Map<String, dynamic>?;
+      final client = json['accounts'] as Map<String, dynamic>?;
+      final clientId = json['client_id'] as String;
       final clientName = client?['full_name'] as String? ?? 'Unknown Client';
       final initials = _getInitials(clientName);
+      final status = json['status'] as String?;
 
       return SessionPreview(
+        clientId: clientId,
         clientName: clientName,
         clientInitials: initials,
         profilePhotoUrl: client?['avatar_url'] as String?,
         scheduledTime: DateTime.parse(json['scheduled_at'] as String),
-        isCompleted: json['status'] == 'completed',
+        isCompleted: status == 'completed',
+        isNoShow: status == 'no_show',
       );
     }).toList();
   } catch (_) {
-    // Sessions table might not exist yet
+    // client_schedules table might not exist yet
     return [];
   }
 });
@@ -210,14 +237,10 @@ final recentClientsProvider = FutureProvider.autoDispose<List<ClientEntity>>((re
 class DashboardData {
   final DashboardStats stats;
   final List<SessionPreview> todaySessions;
-  final List<ClientEntity> recentClients;
-  final List<CompletedSession> completedSessions;
 
   const DashboardData({
     required this.stats,
     required this.todaySessions,
-    required this.recentClients,
-    this.completedSessions = const [],
   });
 }
 
@@ -294,16 +317,27 @@ final recentCompletedSessionsProvider = FutureProvider.autoDispose<List<Complete
 });
 
 /// Combined dashboard provider
+/// Derives today's session stats from todaySessionsProvider for consistency
+/// This ensures "Today's Progress" matches "Today's Schedule" exactly
 final dashboardDataProvider = FutureProvider.autoDispose<DashboardData>((ref) async {
   final stats = await ref.watch(dashboardStatsProvider.future);
   final sessions = await ref.watch(todaySessionsProvider.future);
-  final clients = await ref.watch(recentClientsProvider.future);
-  final completedSessions = await ref.watch(recentCompletedSessionsProvider.future);
+
+  // Override today session stats with actual session list data for consistency
+  final todayTotal = sessions.length;
+  final todayCompleted = sessions.where((s) => s.isCompleted).length;
+  final todayNoShows = sessions.where((s) => s.isNoShow).length;
+
+  final correctedStats = DashboardStats(
+    totalClients: stats.totalClients,
+    activeClients: stats.activeClients,
+    todaySessions: todayTotal,
+    completedSessions: todayCompleted,
+    noShows: todayNoShows,
+  );
 
   return DashboardData(
-    stats: stats,
+    stats: correctedStats,
     todaySessions: sessions,
-    recentClients: clients,
-    completedSessions: completedSessions,
   );
 });

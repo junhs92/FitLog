@@ -16,30 +16,41 @@ class SessionReportModel extends SessionReportEntity {
     required super.generatedAt,
     super.sentAt,
     super.viewedAt,
+    super.htmlUrl,
   });
 
   factory SessionReportModel.fromJson(Map<String, dynamic> json) {
+    // Handle content - use content if available, otherwise use summary
+    final content = json['content'] as String? ?? json['summary'] as String? ?? '';
+
+    // Handle generated_at - use generated_at if available, otherwise use created_at
+    final generatedAtStr = json['generated_at'] as String? ?? json['created_at'] as String?;
+    final generatedAt = generatedAtStr != null
+        ? DateTime.parse(generatedAtStr)
+        : DateTime.now();
+
     return SessionReportModel(
       id: json['id'] as String,
       sessionId: json['session_id'] as String,
-      clientId: json['client_id'] as String,
-      trainerId: json['trainer_id'] as String,
-      type: ReportType.fromString(json['type'] as String),
-      status: ReportStatus.fromString(json['status'] as String),
-      title: json['title'] as String,
-      content: json['content'] as String,
+      clientId: json['client_id'] as String? ?? '',
+      trainerId: json['trainer_id'] as String? ?? '',
+      type: ReportType.fromString(json['type'] as String? ?? 'full'),
+      status: ReportStatus.fromString(json['status'] as String? ?? 'generated'),
+      title: json['title'] as String? ?? 'Session Report',
+      content: content,
       highlights: (json['highlights'] as List<dynamic>?)
               ?.map((h) => ReportHighlightModel.fromJson(h as Map<String, dynamic>))
               .toList() ??
           [],
       trainerComment: json['trainer_comment'] as String?,
-      generatedAt: DateTime.parse(json['generated_at'] as String),
+      generatedAt: generatedAt,
       sentAt: json['sent_at'] != null
           ? DateTime.parse(json['sent_at'] as String)
           : null,
       viewedAt: json['viewed_at'] != null
           ? DateTime.parse(json['viewed_at'] as String)
           : null,
+      htmlUrl: json['html_url'] as String?,
     );
   }
 
@@ -68,6 +79,7 @@ class SessionReportModel extends SessionReportEntity {
       'generated_at': generatedAt.toIso8601String(),
       'sent_at': sentAt?.toIso8601String(),
       'viewed_at': viewedAt?.toIso8601String(),
+      'html_url': htmlUrl,
     };
   }
 
@@ -86,6 +98,7 @@ class SessionReportModel extends SessionReportEntity {
       generatedAt: entity.generatedAt,
       sentAt: entity.sentAt,
       viewedAt: entity.viewedAt,
+      htmlUrl: entity.htmlUrl,
     );
   }
 }

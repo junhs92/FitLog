@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
+import '../../../../navigation/routes.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
-import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
-import '../../../client_management/domain/entities/client_entity.dart';
 import '../providers/trainer_home_provider.dart';
-import '../widgets/quick_actions_card.dart';
-import '../widgets/recent_clients_card.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/today_sessions_card.dart';
 
@@ -47,6 +45,18 @@ class TrainerHomeScreen extends ConsumerWidget {
           ],
         ),
         actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Center(
+              child: Text(
+                DateFormat('MMM d, EEE').format(DateTime.now().toLocal()),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.neutral600,
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
@@ -88,55 +98,20 @@ class TrainerHomeScreen extends ConsumerWidget {
             _buildStatsRow(context, data.stats),
             const SizedBox(height: AppSpacing.lg),
 
-            // Quick actions
-            QuickActionsCard(
-              onStartSession: () {
-                // Show client selection dialog for session
-                _showClientSelectionForSession(context, ref, data.recentClients);
-              },
-              onAddClient: () {
-                context.push('/trainer/clients/add');
-              },
-              onViewClients: () {
-                context.go('/trainer/clients');
-              },
-              onGenerateProgram: () {
-                // Show client selection dialog for program generation
-                _showClientSelectionForProgram(context, ref, data.recentClients);
-              },
-            ),
+            // Today's progress
+            _buildTodayProgress(context, data.stats),
             const SizedBox(height: AppSpacing.lg),
 
-            // Today's sessions
+            // Today's schedule
             TodaySessionsCard(
               sessions: data.todaySessions,
               onViewAll: () {
-                // TODO: Navigate to session history
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Session history coming soon')),
-                );
+                context.go(Routes.trainerCalendar);
               },
               onSessionTap: (session) {
-                // TODO: Navigate to session detail
+                context.push('/trainer/clients/${session.clientId}');
               },
             ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // Recent clients
-            RecentClientsCard(
-              clients: data.recentClients,
-              onViewAll: () {
-                context.go('/trainer/clients');
-              },
-              onClientTap: (client) {
-                context.push('/trainer/clients/${client.id}');
-              },
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // Recent completed sessions for reports
-            if (data.completedSessions.isNotEmpty)
-              _buildRecentSessionsCard(context, data.completedSessions),
             const SizedBox(height: AppSpacing.xxl),
           ],
         ),
@@ -146,7 +121,7 @@ class TrainerHomeScreen extends ConsumerWidget {
 
   Widget _buildStatsRow(BuildContext context, DashboardStats stats) {
     return SizedBox(
-      height: 140,
+      height: 120,
       child: Row(
         children: [
           Expanded(
@@ -160,18 +135,9 @@ class TrainerHomeScreen extends ConsumerWidget {
           const SizedBox(width: AppSpacing.md),
           Expanded(
             child: StatCard(
-              title: 'Today',
-              value: '${stats.completedSessions}/${stats.todaySessions}',
-              icon: Icons.today,
-              iconColor: AppColors.secondary,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: StatCard(
-              title: 'This Week',
-              value: stats.weeklySessionsCount.toString(),
-              icon: Icons.calendar_month,
+              title: 'Active Clients',
+              value: stats.activeClients.toString(),
+              icon: Icons.person_pin_circle,
               iconColor: AppColors.success,
             ),
           ),
@@ -180,137 +146,15 @@ class TrainerHomeScreen extends ConsumerWidget {
     );
   }
 
-  void _showClientSelectionForSession(
-    BuildContext context,
-    WidgetRef ref,
-    List<ClientEntity> recentClients,
-  ) {
-    if (recentClients.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add a client first to start a session'),
-        ),
-      );
-      return;
-    }
+  Widget _buildTodayProgress(BuildContext context, DashboardStats stats) {
+    final completed = stats.completedSessions;
+    final total = stats.todaySessions;
+    final remaining = stats.remainingSessions;
+    final noShows = stats.noShows;
+    // No-shows also count as deducted sessions (they consume client package sessions)
+    final deducted = completed + noShows;
+    final progress = total > 0 ? deducted / total : 0.0;
 
-    final trainerIdAsync = ref.read(trainerIdProvider);
-    final trainerId = trainerIdAsync.valueOrNull ?? '';
-
-    showModalBottomSheet(
-      context: context,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '클라이언트 선택',
-              style: Theme.of(ctx).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            ...recentClients.map((client) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    child: Text(
-                      client.initials,
-                      style: const TextStyle(color: AppColors.primary),
-                    ),
-                  ),
-                  title: Text(client.name),
-                  subtitle: client.goals.isNotEmpty
-                      ? Text(client.goalsText)
-                      : null,
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    // Show program selection sheet
-                    ProgramSelectionSheet.show(
-                      context: context,
-                      clientId: client.id,
-                      clientName: client.name,
-                      trainerId: trainerId,
-                    );
-                  },
-                )),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                context.go('/trainer/clients');
-              },
-              child: const Text('전체 클라이언트 보기'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showClientSelectionForProgram(
-    BuildContext context,
-    WidgetRef ref,
-    List<ClientEntity> recentClients,
-  ) {
-    if (recentClients.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Add a client first to generate a program'),
-        ),
-      );
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Generate AI Program for',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            ...recentClients.map((client) => ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.info.withValues(alpha: 0.1),
-                    child: Text(
-                      client.initials,
-                      style: const TextStyle(color: AppColors.info),
-                    ),
-                  ),
-                  title: Text(client.name),
-                  subtitle: client.goals.isNotEmpty
-                      ? Text(client.goalsText)
-                      : null,
-                  trailing: const Icon(Icons.auto_awesome, color: AppColors.info),
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.push('/trainer/program/generate/${client.id}?name=${Uri.encodeComponent(client.name)}');
-                  },
-                )),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.go('/trainer/clients');
-              },
-              child: const Text('View All Clients'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentSessionsCard(
-    BuildContext context,
-    List<CompletedSession> sessions,
-  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -321,81 +165,107 @@ class TrainerHomeScreen extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Recent Sessions',
+                  "Today's Progress",
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                 ),
-                Icon(Icons.history, color: AppColors.neutral700, size: 20),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.sm),
+                  ),
+                  child: Text(
+                    '$deducted / $total',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            ...sessions.take(3).map((session) => _buildSessionTile(context, session)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppSpacing.xs),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                backgroundColor: AppColors.neutral300,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  deducted == total && total > 0
+                      ? AppColors.success
+                      : AppColors.primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      size: 16,
+                      color: AppColors.success,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Completed: $completed',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.neutral700,
+                          ),
+                    ),
+                  ],
+                ),
+                if (noShows > 0)
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.person_off,
+                        size: 16,
+                        color: AppColors.error,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        'No-show: $noShows',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.error,
+                            ),
+                      ),
+                    ],
+                  ),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.schedule,
+                      size: 16,
+                      color: AppColors.neutral600,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(
+                      'Remaining: $remaining',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.neutral700,
+                          ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSessionTile(BuildContext context, CompletedSession session) {
-    final timeAgo = _getTimeAgo(session.completedAt);
-
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        backgroundColor: AppColors.success.withValues(alpha: 0.1),
-        child: Text(
-          session.clientInitials,
-          style: const TextStyle(
-            color: AppColors.success,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      title: Text(
-        session.clientName,
-        style: const TextStyle(fontWeight: FontWeight.w500),
-      ),
-      subtitle: Text(
-        timeAgo,
-        style: TextStyle(
-          color: AppColors.neutral700,
-          fontSize: 12,
-        ),
-      ),
-      trailing: TextButton.icon(
-        onPressed: () {
-          context.push('/trainer/report/${session.id}');
-        },
-        icon: const Icon(Icons.auto_awesome, size: 16),
-        label: const Text('Report'),
-        style: TextButton.styleFrom(
-          foregroundColor: AppColors.info,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-        ),
-      ),
-    );
-  }
-
-  String _getTimeAgo(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} min ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inDays == 1) {
-      return 'Yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
-
   String _getGreeting() {
-    final hour = DateTime.now().hour;
+    final hour = DateTime.now().toLocal().hour;
     if (hour < 12) {
       return 'Good morning';
     } else if (hour < 17) {

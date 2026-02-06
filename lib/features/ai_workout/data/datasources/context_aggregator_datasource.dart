@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 import '../../domain/entities/generation_context.dart';
 import '../models/generation_context_model.dart';
 
@@ -71,7 +72,7 @@ class ContextAggregatorDataSource {
           .limit(20);
 
       final sessions = (response as List<dynamic>)
-          .map((s) => _parseSessionSummary(s))
+          .map((s) => _parseSessionSummary(s as Map<String, dynamic>))
           .toList();
 
       final personalRecords = _extractPersonalRecords(sessions);
@@ -116,17 +117,22 @@ class ContextAggregatorDataSource {
         feedbackResponse as List<dynamic>,
       );
 
-      final swapHistory = (swapResponse as List<dynamic>)
-          .map((s) => ExerciseSwap(
-                originalExercise: s['original_exercise']?['name_ko'] ??
-                    s['original_exercise']?['name'] ??
-                    'Unknown',
-                replacementExercise: s['replacement_exercise']?['name_ko'] ??
-                    s['replacement_exercise']?['name'] ??
-                    'Unknown',
-                reason: s['custom_reason'] ?? s['feedback_reason'],
-              ))
-          .toList();
+      final swapHistory = (swapResponse as List<dynamic>).map((s) {
+        final swap = s as Map<String, dynamic>;
+        final original = swap['original_exercise'] as Map<String, dynamic>?;
+        final replacement =
+            swap['replacement_exercise'] as Map<String, dynamic>?;
+        return ExerciseSwap(
+          originalExercise: (original?['name_ko'] as String?) ??
+              (original?['name'] as String?) ??
+              'Unknown',
+          replacementExercise: (replacement?['name_ko'] as String?) ??
+              (replacement?['name'] as String?) ??
+              'Unknown',
+          reason: (swap['custom_reason'] as String?) ??
+              (swap['feedback_reason'] as String?),
+        );
+      }).toList();
 
       return SessionFeedbackSummary(
         difficultyFeedback: difficultyFeedback,
@@ -153,7 +159,7 @@ class ContextAggregatorDataSource {
           .toList(),
       'limitations': context.limitations,
       'preferences': context.preferences,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nowLocalIso8601(),
     };
 
     await _client.from('ai_generation_context').upsert(data);
@@ -163,21 +169,26 @@ class ContextAggregatorDataSource {
 
   SessionSummary _parseSessionSummary(Map<String, dynamic> data) {
     // Note: sets are stored as JSONB in session_exercises.sets column
-    final exercises = (data['session_exercises'] as List<dynamic>?)
-            ?.map((se) => ExerciseSummary(
-                  name: se['exercises']?['name_ko'] ??
-                      se['exercises']?['name'] ??
-                      'Unknown',
-                  sets: (se['sets'] as List<dynamic>?)
-                          ?.map((set) => SetSummary(
-                                weight: (set['weight'] as num?)?.toDouble() ?? 0,
-                                reps: set['reps'] as int? ?? 0,
-                                rpe: (set['rpe'] as num?)?.toDouble(),
-                              ))
-                          .toList() ??
-                      [],
-                ))
-            .toList() ??
+    final exercises = (data['session_exercises'] as List<dynamic>?)?.map((se) {
+          final sessionExercise = se as Map<String, dynamic>;
+          final exercise = sessionExercise['exercises'] as Map<String, dynamic>?;
+          return ExerciseSummary(
+            name: (exercise?['name_ko'] as String?) ??
+                (exercise?['name'] as String?) ??
+                'Unknown',
+            sets: (sessionExercise['sets'] as List<dynamic>?)
+                    ?.map((set) {
+                      final setData = set as Map<String, dynamic>;
+                      return SetSummary(
+                        weight: (setData['weight'] as num?)?.toDouble() ?? 0,
+                        reps: setData['reps'] as int? ?? 0,
+                        rpe: (setData['rpe'] as num?)?.toDouble(),
+                      );
+                    })
+                    .toList() ??
+                [],
+          );
+        }).toList() ??
         [];
 
     final durationSeconds = data['duration_seconds'] as int? ?? 0;
@@ -270,9 +281,12 @@ class ContextAggregatorDataSource {
     final feedbackMap = <String, Map<DifficultyLevel, int>>{};
 
     for (final f in feedbackData) {
-      final exerciseName =
-          f['exercises']?['name_ko'] ?? f['exercises']?['name'] ?? 'Unknown';
-      final feedbackStr = f['feedback'] as String? ?? 'just_right';
+      final feedbackItem = f as Map<String, dynamic>;
+      final exercises = feedbackItem['exercises'] as Map<String, dynamic>?;
+      final exerciseName = (exercises?['name_ko'] as String?) ??
+          (exercises?['name'] as String?) ??
+          'Unknown';
+      final feedbackStr = feedbackItem['feedback'] as String? ?? 'just_right';
       final difficulty = _parseDifficultyLevel(feedbackStr);
 
       feedbackMap.putIfAbsent(exerciseName, () => {});

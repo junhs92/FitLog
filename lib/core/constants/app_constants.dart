@@ -19,14 +19,13 @@ class AppConstants {
   static const String difficultyOptimal = 'optimal';
   static const String difficultyTooHard = 'too_hard';
 
-  // Movement patterns
-  static const List<String> movementPatterns = [
-    'squat',
-    'hinge',
+  // Movement groups
+  static const List<String> movementGroups = [
     'push',
     'pull',
-    'carry',
-    'rotation',
+    'legs',
+    'core',
+    'other',
   ];
 
   // RPE scale

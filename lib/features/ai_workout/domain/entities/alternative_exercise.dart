@@ -8,14 +8,20 @@ class AlternativeExercisesResult {
   /// Alternatives with same equipment (pattern variations)
   final List<SessionAlternative> patternAlternatives;
 
+  /// Accessory/isolation exercises in the same movement group
+  final List<SessionAlternative> accessoryExercises;
+
   const AlternativeExercisesResult({
     this.equipmentAlternatives = const [],
     this.patternAlternatives = const [],
+    this.accessoryExercises = const [],
   });
 
   /// Check if there are no alternatives available
   bool get isEmpty =>
-      equipmentAlternatives.isEmpty && patternAlternatives.isEmpty;
+      equipmentAlternatives.isEmpty &&
+      patternAlternatives.isEmpty &&
+      accessoryExercises.isEmpty;
 
   /// Check if there are alternatives available
   bool get isNotEmpty => !isEmpty;
@@ -58,6 +64,21 @@ class EquipmentLabels {
     'other': '기타',
   };
 
+  /// Equipment priority order for alternative exercise display
+  /// 맨몸 → 머신 → 바벨 → 덤벨 → 기타
+  static const List<String> priorityOrder = [
+    'bodyweight',
+    'machine',
+    'barbell',
+    'dumbbell',
+    'cable',
+    'smith_machine',
+    'kettlebell',
+    'resistance_band',
+    'ez_bar',
+    'other',
+  ];
+
   /// Get Korean label for equipment
   static String getLabel(String? equipment) {
     if (equipment == null) return '기타';
@@ -66,4 +87,12 @@ class EquipmentLabels {
 
   /// Get all available equipment types
   static List<String> get allTypes => _labels.keys.toList();
+
+  /// Get priority index for sorting equipment groups
+  /// Lower index = higher priority
+  static int getPriorityIndex(String? equipment) {
+    if (equipment == null) return priorityOrder.length;
+    final index = priorityOrder.indexOf(equipment.toLowerCase());
+    return index == -1 ? priorityOrder.length : index;
+  }
 }

@@ -32,6 +32,7 @@ class SessionEntity {
   final String trainerId;
   final String clientId;
   final String? clientName;
+  final String? programId; // Associated workout program (training direction)
   final SessionStatus status;
   final String? sessionType;
   final List<SessionExerciseEntity> exercises;
@@ -44,11 +45,25 @@ class SessionEntity {
   final Duration? duration;
   final DateTime createdAt;
 
+  // AI session generation context
+  final int? sessionNumber; // Sequential number within program
+  final String? focusArea; // Primary focus (chest, pull, legs, full_body, etc.)
+  final int? daysSinceLast; // Gap from previous session
+  final String? aiReasoning; // AI explanation for exercise selection
+
+  // Session summary stats (saved on completion)
+  final int? savedTotalExercises;
+  final int? savedTotalSets;
+  final double? savedTotalVolume;
+  final double? savedAvgReps;
+  final double? savedAvgRpe;
+
   const SessionEntity({
     required this.id,
     required this.trainerId,
     required this.clientId,
     this.clientName,
+    this.programId,
     required this.status,
     this.sessionType,
     this.exercises = const [],
@@ -60,6 +75,15 @@ class SessionEntity {
     this.completedAt,
     this.duration,
     required this.createdAt,
+    this.sessionNumber,
+    this.focusArea,
+    this.daysSinceLast,
+    this.aiReasoning,
+    this.savedTotalExercises,
+    this.savedTotalSets,
+    this.savedTotalVolume,
+    this.savedAvgReps,
+    this.savedAvgRpe,
   });
 
   /// Get total exercises count
@@ -113,6 +137,7 @@ class SessionEntity {
     String? trainerId,
     String? clientId,
     String? clientName,
+    String? programId,
     SessionStatus? status,
     String? sessionType,
     List<SessionExerciseEntity>? exercises,
@@ -124,12 +149,22 @@ class SessionEntity {
     DateTime? completedAt,
     Duration? duration,
     DateTime? createdAt,
+    int? sessionNumber,
+    String? focusArea,
+    int? daysSinceLast,
+    String? aiReasoning,
+    int? savedTotalExercises,
+    int? savedTotalSets,
+    double? savedTotalVolume,
+    double? savedAvgReps,
+    double? savedAvgRpe,
   }) {
     return SessionEntity(
       id: id ?? this.id,
       trainerId: trainerId ?? this.trainerId,
       clientId: clientId ?? this.clientId,
       clientName: clientName ?? this.clientName,
+      programId: programId ?? this.programId,
       status: status ?? this.status,
       sessionType: sessionType ?? this.sessionType,
       exercises: exercises ?? this.exercises,
@@ -141,6 +176,15 @@ class SessionEntity {
       completedAt: completedAt ?? this.completedAt,
       duration: duration ?? this.duration,
       createdAt: createdAt ?? this.createdAt,
+      sessionNumber: sessionNumber ?? this.sessionNumber,
+      focusArea: focusArea ?? this.focusArea,
+      daysSinceLast: daysSinceLast ?? this.daysSinceLast,
+      aiReasoning: aiReasoning ?? this.aiReasoning,
+      savedTotalExercises: savedTotalExercises ?? this.savedTotalExercises,
+      savedTotalSets: savedTotalSets ?? this.savedTotalSets,
+      savedTotalVolume: savedTotalVolume ?? this.savedTotalVolume,
+      savedAvgReps: savedAvgReps ?? this.savedAvgReps,
+      savedAvgRpe: savedAvgRpe ?? this.savedAvgRpe,
     );
   }
 

@@ -84,14 +84,14 @@ final clientLifestyleSummariesProvider = FutureProvider.family<
       if (sleepHours != null && sleepHours < 6) {
         hasAlert = true;
         alertMessage = '수면 부족 (${sleepHours.toStringAsFixed(1)}시간)';
-      } else if (waterMl != null && waterMl < 500 && today.hour > 14) {
+      } else if (waterMl != null && waterMl < 500 && today.toLocal().hour > 14) {
         hasAlert = true;
         alertMessage = '수분 섭취 부족';
-      } else if (mealCount == 0 && today.hour > 12) {
+      } else if (mealCount == 0 && today.toLocal().hour > 12) {
         hasAlert = true;
         alertMessage = '아직 식사 기록 없음';
       }
-    } else if (today.hour > 10) {
+    } else if (today.toLocal().hour > 10) {
       // No log for today
       hasAlert = true;
       alertMessage = '오늘 기록 없음';

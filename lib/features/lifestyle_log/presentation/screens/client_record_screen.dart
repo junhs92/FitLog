@@ -214,10 +214,10 @@ class ClientRecordScreen extends ConsumerWidget {
     SleepLogEntity? existingSleep,
   ) {
     TimeOfDay bedtime = existingSleep?.bedtime != null
-        ? TimeOfDay.fromDateTime(existingSleep!.bedtime!)
+        ? TimeOfDay.fromDateTime(existingSleep!.bedtime!.toLocal())
         : const TimeOfDay(hour: 22, minute: 0);
     TimeOfDay wakeTime = existingSleep?.wakeTime != null
-        ? TimeOfDay.fromDateTime(existingSleep!.wakeTime!)
+        ? TimeOfDay.fromDateTime(existingSleep!.wakeTime!.toLocal())
         : const TimeOfDay(hour: 7, minute: 0);
     SleepQuality? quality = existingSleep?.quality;
 

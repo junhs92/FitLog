@@ -5,19 +5,27 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../domain/entities/workout_program.dart';
 import '../providers/ai_workout_provider.dart';
+import '../widgets/program_form_fields.dart';
+import '../../../active_session/presentation/providers/session_provider.dart';
 
-/// Screen for generating new AI workout programs
+/// Screen for creating/editing AI workout programs
+/// Programs store client PREFERENCES for exercise selection
+/// Goals come from client's account (accounts.fitness_goals)
 class GenerateProgramScreen extends ConsumerStatefulWidget {
   final String clientId;
   final String trainerId;
   final String clientName;
+  final String? programId; // If provided, edit mode is enabled
 
   const GenerateProgramScreen({
     required this.clientId,
     required this.trainerId,
     required this.clientName,
+    this.programId,
     super.key,
   });
+
+  bool get isEditMode => programId != null;
 
   @override
   ConsumerState<GenerateProgramScreen> createState() =>
@@ -25,68 +33,99 @@ class GenerateProgramScreen extends ConsumerStatefulWidget {
 }
 
 class _GenerateProgramScreenState extends ConsumerState<GenerateProgramScreen> {
-  TrainingGoal _primaryGoal = TrainingGoal.generalFitness;
-  TrainingGoal? _secondaryGoal;
-  TrainingGoal? _previousGoal;
-  bool _isLoadingPreviousGoal = true;
+  // Form state
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  TrainingSplit _trainingSplit = TrainingSplit.fullBody;
+  final Set<String> _focusAreas = {};
+  final Set<String> _preferredMovementGroups = {};
+
+  // Edit mode state
+  bool _isLoadingExistingProgram = false;
+  WorkoutProgramEntity? _existingProgram;
 
   @override
   void initState() {
     super.initState();
-    _loadPreviousGoal();
+    // Clear any previous program state so listener can detect new creation
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(programCreationProvider.notifier).clear();
+      debugPrint('🟢 [INIT] Cleared previous program state');
+    });
+
+    if (widget.isEditMode) {
+      _loadExistingProgram();
+    } else {
+      // Default program name
+      _nameController.text = '${widget.clientName}의 프로그램';
+    }
   }
 
-  Future<void> _loadPreviousGoal() async {
+  Future<void> _loadExistingProgram() async {
+    if (widget.programId == null) return;
+
+    setState(() => _isLoadingExistingProgram = true);
+
     try {
-      final previousGoal = await ref
-          .read(aiWorkoutRepositoryProvider)
-          .getPreviousGoal(widget.clientId);
-      if (mounted) {
-        setState(() {
-          _previousGoal = previousGoal;
-          if (previousGoal != null) {
-            _primaryGoal = previousGoal;
+      final repository = ref.read(aiWorkoutRepositoryProvider);
+      final result = await repository.getProgram(widget.programId!);
+
+      result.fold(
+        (failure) {
+          debugPrint('🔴 [EDIT] Failed to load program: $failure');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('프로그램을 불러올 수 없습니다'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+            context.pop();
           }
-          _isLoadingPreviousGoal = false;
-        });
-      }
+        },
+        (program) {
+          if (mounted) {
+            setState(() {
+              _existingProgram = program;
+              _nameController.text = program.name;
+              _descriptionController.text = program.description ?? '';
+              _trainingSplit = program.trainingSplit;
+              _focusAreas.addAll(program.focusAreas);
+              _preferredMovementGroups.addAll(program.preferredMovementGroups);
+              _isLoadingExistingProgram = false;
+            });
+            debugPrint('🟢 [EDIT] Loaded program: ${program.name}');
+          }
+        },
+      );
     } catch (e) {
+      debugPrint('🔴 [EDIT] Error loading program: $e');
       if (mounted) {
-        setState(() {
-          _isLoadingPreviousGoal = false;
-        });
+        setState(() => _isLoadingExistingProgram = false);
       }
     }
   }
 
   @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final state = ref.watch(programGenerationProvider);
-
-    ref.listen<ProgramGenerationState>(programGenerationProvider, (prev, next) {
-      print('[GenerateScreen] State changed - isLoading: ${next.isLoading}, hasProgram: ${next.program != null}, error: ${next.error}');
-      print('[GenerateScreen] Previous program was null: ${prev?.program == null}');
-
-      if (next.program != null && prev?.program == null) {
-        print('[GenerateScreen] ====== NAVIGATING TO REVIEW ======');
-        print('[GenerateScreen] Program ID: ${next.program!.id}');
-        print('[GenerateScreen] Route: /trainer/program/review/${next.program!.id}?clientId=${widget.clientId}');
-        context.push(
-          '/trainer/program/review/${next.program!.id}?clientId=${widget.clientId}',
-        );
-      } else if (next.program != null) {
-        print('[GenerateScreen] Program exists but prev was not null - skipping navigation');
-      }
-    });
+    final state = ref.watch(programCreationProvider);
 
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        title: const Text('AI 세션 생성'),
+        title: Text(widget.isEditMode ? '프로그램 수정하기' : '프로그램 만들기'),
         backgroundColor: AppColors.surfaceLight,
         elevation: 0,
       ),
-      body: _isLoadingPreviousGoal
+      body: _isLoadingExistingProgram
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(AppSpacing.md),
@@ -97,48 +136,126 @@ class _GenerateProgramScreenState extends ConsumerState<GenerateProgramScreen> {
                   _ClientInfoCard(clientName: widget.clientName),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Previous goal indicator (if exists)
-                  if (_previousGoal != null) ...[
-                    _PreviousGoalIndicator(goal: _previousGoal!),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
-
-                  // Primary goal
-                  _SectionTitle(title: '훈련 목표', required: true),
+                  // Program name
+                  _SectionTitle(title: '프로그램 이름', required: true),
                   const SizedBox(height: AppSpacing.sm),
-                  _GoalSelector(
-                    goals: TrainingGoal.values,
-                    selectedGoal: _primaryGoal,
-                    onGoalSelected: (goal) {
+                  TextField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      hintText: '예: 근력 향상 프로그램',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Training Split
+                  _SectionTitle(title: '훈련 분할', required: true),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '세션 구조를 결정합니다 (전신, 상체/하체 교대, PPL 로테이션)',
+                    style: TextStyle(fontSize: 12, color: AppColors.neutral500),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  ProgramSplitSelector(
+                    selectedSplit: _trainingSplit,
+                    onSplitSelected: (split) {
                       setState(() {
-                        _primaryGoal = goal;
-                        if (_secondaryGoal == goal) {
-                          _secondaryGoal = null;
+                        _trainingSplit = split;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Focus areas - always show all muscle groups regardless of split
+                  _SectionTitle(title: '집중 부위 (선택)', required: false),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '선택한 부위의 운동이 추가로 추천됩니다',
+                    style: TextStyle(fontSize: 12, color: AppColors.neutral500),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  ProgramFocusAreaSelector(
+                    selectedAreas: _focusAreas,
+                    onAreaToggled: (area) {
+                      setState(() {
+                        if (_focusAreas.contains(area)) {
+                          _focusAreas.remove(area);
+                        } else {
+                          _focusAreas.add(area);
                         }
                       });
                     },
                   ),
                   const SizedBox(height: AppSpacing.lg),
 
-                  // Secondary goal (optional)
-                  _SectionTitle(title: '보조 목표', required: false),
+                  // Movement group preferences
+                  _SectionTitle(title: '선호하는 운동 유형 (선택)', required: false),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'AI가 이 유형의 운동을 우선적으로 선택합니다',
+                    style: TextStyle(fontSize: 12, color: AppColors.neutral500),
+                  ),
                   const SizedBox(height: AppSpacing.sm),
-                  _GoalSelector(
-                    goals: TrainingGoal.values,
-                    selectedGoal: _secondaryGoal,
-                    excludeGoal: _primaryGoal,
-                    allowDeselect: true,
-                    onGoalSelected: (goal) {
+                  ProgramMovementGroupSelector(
+                    selectedGroups: _preferredMovementGroups,
+                    onGroupToggled: (group) {
                       setState(() {
-                        _secondaryGoal = _secondaryGoal == goal ? null : goal;
+                        if (_preferredMovementGroups.contains(group)) {
+                          _preferredMovementGroups.remove(group);
+                        } else {
+                          _preferredMovementGroups.add(group);
+                        }
                       });
                     },
                   ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Description (optional)
+                  _SectionTitle(title: '설명 (선택)', required: false),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    controller: _descriptionController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: '프로그램에 대한 추가 설명...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: AppSpacing.xl),
 
-                  // Generate button
+                  // Info card about client goals
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    decoration: BoxDecoration(
+                      color: AppColors.info.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.auto_awesome, color: AppColors.info),
+                        SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'AI가 클라이언트의 목표와 선호하는 운동 유형에 맞춰 운동을 생성합니다. 목표는 클라이언트 프로필에서 가져옵니다.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.info,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+
+                  // Create/Update button
                   ElevatedButton(
-                    onPressed: state.isLoading ? null : _generateProgram,
+                    onPressed: state.isLoading ? null : _createProgram,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -160,9 +277,9 @@ class _GenerateProgramScreenState extends ConsumerState<GenerateProgramScreen> {
                             children: [
                               const Icon(Icons.psychology, color: AppColors.neutralWhite),
                               const SizedBox(width: 8),
-                              const Text(
-                                'AI 세션 생성',
-                                style: TextStyle(
+                              Text(
+                                widget.isEditMode ? '프로그램 수정하기' : '프로그램 만들기',
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.neutralWhite,
@@ -194,69 +311,50 @@ class _GenerateProgramScreenState extends ConsumerState<GenerateProgramScreen> {
     );
   }
 
-  void _generateProgram() {
-    ref.read(programGenerationProvider.notifier).generateProgram(
-          clientId: widget.clientId,
-          trainerId: widget.trainerId,
-          primaryGoal: _primaryGoal,
-          secondaryGoal: _secondaryGoal,
-        );
-  }
-}
+  Future<void> _createProgram() async {
+    debugPrint('🟢 [CREATE] _createProgram called');
 
-class _PreviousGoalIndicator extends StatelessWidget {
-  final TrainingGoal goal;
-
-  const _PreviousGoalIndicator({required this.goal});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.3),
+    if (_nameController.text.trim().isEmpty) {
+      debugPrint('🔴 [CREATE] Name is empty, showing error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('프로그램 이름을 입력해주세요'),
+          backgroundColor: AppColors.error,
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.history,
-            size: 18,
-            color: AppColors.primary,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text(
-            '이전 목표: ',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.neutral600,
-            ),
-          ),
-          Text(
-            goal.displayName,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.primary,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            '(자동 선택됨)',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.neutral500,
-            ),
-          ),
-        ],
-      ),
+      );
+      return;
+    }
+
+    // Save program preferences directly (no exercise generation)
+    final success = await ref.read(programCreationProvider.notifier).saveProgramPreferencesOnly(
+      clientId: widget.clientId,
+      trainerId: widget.trainerId,
+      name: _nameController.text.trim(),
+      description: _descriptionController.text.trim().isEmpty
+          ? null
+          : _descriptionController.text.trim(),
+      trainingSplit: _trainingSplit,
+      focusAreas: _focusAreas.isNotEmpty ? _focusAreas.toList() : null,
+      preferredMovementGroups: _preferredMovementGroups.isNotEmpty
+          ? _preferredMovementGroups.toList()
+          : null,
+      existingProgramId: widget.programId,
     );
+
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(widget.isEditMode ? '프로그램이 수정되었습니다' : '프로그램이 저장되었습니다'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      // Invalidate providers to refresh data
+      ref.invalidate(clientProgramsProvider(widget.clientId));
+      ref.invalidate(activeProgramProvider(widget.clientId));
+      // Also invalidate exercise recommendations so they reflect new program preferences
+      ref.invalidate(exerciseRecommendationsProvider(widget.clientId));
+      context.pop();
+    }
   }
 }
 
@@ -282,10 +380,7 @@ class _ClientInfoCard extends StatelessWidget {
               color: AppColors.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.person,
-              color: AppColors.primary,
-            ),
+            child: const Icon(Icons.person, color: AppColors.primary),
           ),
           const SizedBox(width: AppSpacing.md),
           Column(
@@ -293,10 +388,7 @@ class _ClientInfoCard extends StatelessWidget {
             children: [
               const Text(
                 '프로그램 대상',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.neutral500,
-                ),
+                style: TextStyle(fontSize: 12, color: AppColors.neutral500),
               ),
               Text(
                 clientName,
@@ -318,10 +410,7 @@ class _SectionTitle extends StatelessWidget {
   final String title;
   final bool required;
 
-  const _SectionTitle({
-    required this.title,
-    required this.required,
-  });
+  const _SectionTitle({required this.title, required this.required});
 
   @override
   Widget build(BuildContext context) {
@@ -339,118 +428,10 @@ class _SectionTitle extends StatelessWidget {
           const SizedBox(width: 4),
           const Text(
             '*',
-            style: TextStyle(
-              color: AppColors.error,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
           ),
         ],
       ],
     );
   }
 }
-
-class _GoalSelector extends StatelessWidget {
-  final List<TrainingGoal> goals;
-  final TrainingGoal? selectedGoal;
-  final TrainingGoal? excludeGoal;
-  final bool allowDeselect;
-  final Function(TrainingGoal) onGoalSelected;
-
-  const _GoalSelector({
-    required this.goals,
-    this.selectedGoal,
-    this.excludeGoal,
-    this.allowDeselect = false,
-    required this.onGoalSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: goals
-          .where((g) => g != excludeGoal)
-          .map((goal) => _GoalChip(
-                goal: goal,
-                isSelected: selectedGoal == goal,
-                onTap: () => onGoalSelected(goal),
-              ))
-          .toList(),
-    );
-  }
-}
-
-class _GoalChip extends StatelessWidget {
-  final TrainingGoal goal;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _GoalChip({
-    required this.goal,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary : AppColors.surfaceElevated,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isSelected ? AppColors.primary : AppColors.neutral200,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _getGoalIcon(goal),
-                size: 18,
-                color: isSelected ? AppColors.neutralWhite : AppColors.neutral700,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                goal.displayName,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? AppColors.neutralWhite : AppColors.neutral700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  IconData _getGoalIcon(TrainingGoal goal) {
-    switch (goal) {
-      case TrainingGoal.strength:
-        return Icons.fitness_center;
-      case TrainingGoal.hypertrophy:
-        return Icons.trending_up;
-      case TrainingGoal.endurance:
-        return Icons.directions_run;
-      case TrainingGoal.weightLoss:
-        return Icons.monitor_weight;
-      case TrainingGoal.generalFitness:
-        return Icons.favorite;
-      case TrainingGoal.rehabilitation:
-        return Icons.healing;
-      case TrainingGoal.athletic:
-        return Icons.sports;
-    }
-  }
-}
-
-// Duration and session selectors removed - now always generates single session

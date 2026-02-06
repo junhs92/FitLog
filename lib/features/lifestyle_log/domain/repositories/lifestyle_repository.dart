@@ -1,5 +1,8 @@
 import '../../../../shared/models/result.dart';
 import '../entities/daily_log_entity.dart';
+import '../entities/exercise_stats_entity.dart';
+import '../entities/exercise_volume_history_entity.dart';
+import '../entities/lifestyle_summary_entity.dart';
 import '../entities/meal_log_entity.dart';
 import '../entities/water_log_entity.dart';
 import '../entities/sleep_log_entity.dart';
@@ -8,6 +11,13 @@ import '../entities/body_photo_entity.dart';
 
 /// Repository interface for lifestyle logging operations
 abstract class LifestyleRepository {
+  // =============== 7-Day Lifestyle Summary ===============
+
+  /// Get aggregated 7-day lifestyle summary for a client
+  /// Used in Flow 0 (Pre-Session) to show trainer the client's recent status
+  Future<Result<LifestyleSummaryEntity>> get7DayLifestyleSummary({
+    required String clientId,
+  });
   // =============== Daily Log Operations ===============
 
   /// Get daily log for a specific date
@@ -209,5 +219,22 @@ abstract class LifestyleRepository {
     required String clientId,
     required DateTime fromDate,
     required DateTime toDate,
+  });
+
+  // =============== Exercise Stats Operations ===============
+
+  /// Get aggregated exercise statistics for a client
+  /// [dayRange] - Optional number of days to look back (null = all time)
+  Future<Result<List<ExerciseStatsEntity>>> getExerciseStats({
+    required String clientId,
+    int? dayRange,
+  });
+
+  /// Get exercise volume history for charting
+  /// Returns sessions with volume totals ordered by date
+  Future<Result<ExerciseVolumeHistoryEntity>> getExerciseVolumeHistory({
+    required String clientId,
+    required String exerciseId,
+    int limit = 50,
   });
 }

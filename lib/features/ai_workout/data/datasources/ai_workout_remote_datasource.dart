@@ -740,6 +740,16 @@ class AIWorkoutRemoteDataSource {
       debugPrint('🔄 [AI] Pattern alternatives found: ${patternResults.length}');
     }
 
+    // Step 3b: Query for accessory exercises (isolation exercises in same movement_group)
+    final accessoryQuery = _client
+        .from('exercises')
+        .select()
+        .eq('movement_group', movementGroup)
+        .eq('category', 'isolation')
+        .neq('id', exerciseId);
+    final accessoryResults = await accessoryQuery.limit(10);
+    debugPrint('🔄 [AI] Accessory alternatives found: ${(accessoryResults as List).length}');
+
     // Step 4: Group equipment alternatives by equipment type
     final equipmentGroupsMap = <String, List<SessionAlternative>>{};
     for (final exercise in equipmentResults) {
@@ -759,14 +769,16 @@ class AIWorkoutRemoteDataSource {
       ));
     }
 
-    // Convert to EquipmentGroup list
+    // Convert to EquipmentGroup list and sort by equipment priority order
     final equipmentAlternatives = equipmentGroupsMap.entries.map((entry) {
       return EquipmentGroup(
         equipment: entry.key,
         equipmentLabel: EquipmentLabels.getLabel(entry.key),
         exercises: entry.value,
       );
-    }).toList();
+    }).toList()
+      ..sort((a, b) => EquipmentLabels.getPriorityIndex(a.equipment)
+          .compareTo(EquipmentLabels.getPriorityIndex(b.equipment)));
 
     // Step 5: Map pattern alternatives
     final patternAlternatives = patternResults.asMap().entries.map((entry) {
@@ -782,11 +794,26 @@ class AIWorkoutRemoteDataSource {
       );
     }).toList();
 
-    debugPrint('🔄 [AI] Result: ${equipmentAlternatives.length} equipment groups, ${patternAlternatives.length} pattern alternatives');
+    // Step 6: Map accessory alternatives
+    final accessoryAlternatives = accessoryResults.asMap().entries.map((entry) {
+      final ex = entry.value as Map<String, dynamic>;
+      return SessionAlternative(
+        exerciseId: ex['id'] as String,
+        exerciseName: ex['name'] as String,
+        exerciseNameKo: ex['name_ko'] as String?,
+        type: AlternativeType.samePattern,
+        reason: 'Isolation exercise in same movement group',
+        reasonKo: '같은 패턴 고립 운동',
+        isRecommended: entry.key == 0, // First is recommended
+      );
+    }).toList();
+
+    debugPrint('🔄 [AI] Result: ${equipmentAlternatives.length} equipment groups, ${patternAlternatives.length} pattern alternatives, ${accessoryAlternatives.length} accessory exercises');
 
     return AlternativeExercisesResult(
       equipmentAlternatives: equipmentAlternatives,
       patternAlternatives: patternAlternatives,
+      accessoryExercises: accessoryAlternatives,
     );
   }
 
@@ -935,6 +962,7 @@ class AIWorkoutRemoteDataSource {
           orderIndex: exData['orderIndex'] as int? ?? exercises.length,
           targetSets: exData['targetSets'] as int? ?? 3,
           targetReps: exData['targetReps'] as String? ?? '10-12',
+          targetRpe: exData['targetRpe'] as int?, // RPE from AI if prescribed
           restSeconds: exData['restSeconds'] as int? ?? 60,
           aiReasoning: reasoningEn.isNotEmpty ? reasoningEn : historyConsideration,
           aiReasoningKo: reasoningKo.isNotEmpty ? reasoningKo : historyConsideration,

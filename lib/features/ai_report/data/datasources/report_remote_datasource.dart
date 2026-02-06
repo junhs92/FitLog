@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 import '../models/session_report_model.dart';
 import '../../domain/entities/session_report.dart';
 
@@ -24,7 +25,8 @@ class ReportRemoteDataSource {
           *,
           session_exercises(
             *,
-            exercises(name, name_ko)
+            exercises(name, name_ko),
+            set_records(*)
           ),
           clients:accounts!sessions_client_id_fkey(full_name),
           trainers:accounts!sessions_trainer_id_fkey(full_name)
@@ -51,6 +53,13 @@ class ReportRemoteDataSource {
 
     final title = _generateTitle(type, clientName, sessionData);
 
+    // Generate summary (shorter version for the required summary column)
+    final summary = _generateSummary(
+      clientName: clientName,
+      exercises: exercises,
+      highlights: highlights,
+    );
+
     // Save report to database
     final reportData = {
       'id': reportId,
@@ -60,6 +69,8 @@ class ReportRemoteDataSource {
       'type': type.id,
       'status': ReportStatus.generated.id,
       'title': title,
+      'summary': summary,
+      'summary_ko': summary,
       'content': content,
       'highlights': highlights
           .map((h) => {
@@ -73,7 +84,7 @@ class ReportRemoteDataSource {
               })
           .toList(),
       'trainer_comment': trainerComment,
-      'generated_at': DateTime.now().toIso8601String(),
+      'generated_at': nowLocalIso8601(),
     };
 
     await _client.from('session_reports').insert(reportData);
@@ -150,7 +161,7 @@ class ReportRemoteDataSource {
     // Update status and sent timestamp
     await _client.from('session_reports').update({
       'status': ReportStatus.sent.id,
-      'sent_at': DateTime.now().toIso8601String(),
+      'sent_at': nowLocalIso8601(),
     }).eq('id', reportId);
 
     // TODO: Implement actual sending via KakaoTalk/SMS
@@ -163,7 +174,7 @@ class ReportRemoteDataSource {
   Future<void> markAsViewed(String reportId) async {
     await _client.from('session_reports').update({
       'status': ReportStatus.viewed.id,
-      'viewed_at': DateTime.now().toIso8601String(),
+      'viewed_at': nowLocalIso8601(),
     }).eq('id', reportId);
   }
 
@@ -176,6 +187,31 @@ class ReportRemoteDataSource {
   /// Delete a report
   Future<void> deleteReport(String reportId) async {
     await _client.from('session_reports').delete().eq('id', reportId);
+  }
+
+  /// Generate shareable HTML report
+  /// Returns a map with 'htmlUrl' and 'htmlContent'
+  Future<Map<String, String>> generateHtmlReport({
+    required String reportId,
+    String? sessionId,
+  }) async {
+    final response = await _client.functions.invoke(
+      'generate-html-report',
+      body: {
+        'reportId': reportId,
+        if (sessionId != null) 'sessionId': sessionId,
+      },
+    );
+
+    if (response.status != 200) {
+      throw Exception('Failed to generate HTML report: ${response.data}');
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    return {
+      'htmlUrl': data['htmlUrl'] as String,
+      'htmlContent': data['htmlContent'] as String,
+    };
   }
 
   /// Regenerate report with different template
@@ -197,11 +233,33 @@ class ReportRemoteDataSource {
 
   // Private helper methods
 
+  String _generateSummary({
+    required String clientName,
+    required List<dynamic> exercises,
+    required List<ReportHighlight> highlights,
+  }) {
+    final buffer = StringBuffer();
+    buffer.write('$clientName님 운동 완료. ');
+    buffer.write('${exercises.length}개 운동 수행. ');
+
+    if (highlights.isNotEmpty) {
+      final topHighlight = highlights.first;
+      buffer.write('${topHighlight.type.emoji} ${topHighlight.displayTitle}');
+    }
+
+    return buffer.toString();
+  }
+
   List<ReportHighlight> _extractHighlights(List<dynamic> exercises) {
     final highlights = <ReportHighlight>[];
 
-    for (final exercise in exercises) {
-      final sets = exercise['sets'] as List<dynamic>? ?? [];
+    // Only process exercises with recorded sets
+    final completedExercises = exercises
+        .where((e) => (e['set_records'] as List<dynamic>? ?? []).isNotEmpty)
+        .toList();
+
+    for (final exercise in completedExercises) {
+      final sets = exercise['set_records'] as List<dynamic>? ?? [];
       final exerciseName =
           exercise['exercises']?['name_ko'] ?? exercise['exercises']?['name'] ?? 'Exercise';
 
@@ -249,7 +307,7 @@ class ReportRemoteDataSource {
     }
 
     // Add general session highlights if nothing specific
-    if (highlights.isEmpty && exercises.isNotEmpty) {
+    if (highlights.isEmpty && completedExercises.isNotEmpty) {
       highlights.add(const ReportHighlight(
         type: HighlightType.consistency,
         title: 'Great Session!',
@@ -293,6 +351,22 @@ class ReportRemoteDataSource {
     final durationSeconds = sessionData['duration_seconds'] as int? ?? 0;
     final duration = (durationSeconds / 60).round(); // Convert to minutes
 
+    // Filter to only exercises with recorded sets
+    final completedExercises = exercises
+        .where((e) => (e['set_records'] as List<dynamic>? ?? []).isNotEmpty)
+        .toList();
+
+    // Calculate overall volume
+    double overallVolume = 0;
+    for (final exercise in completedExercises) {
+      final sets = exercise['set_records'] as List<dynamic>? ?? [];
+      for (final set in sets) {
+        final weight = (set['weight'] as num?)?.toDouble() ?? 0;
+        final reps = set['reps'] as int? ?? 0;
+        overallVolume += weight * reps;
+      }
+    }
+
     switch (type) {
       case ReportType.full:
         buffer.writeln('# $clientName님의 운동 리포트\n');
@@ -308,27 +382,97 @@ class ReportRemoteDataSource {
         }
 
         buffer.writeln('## 💪 운동 내역\n');
-        for (final exercise in exercises) {
+        for (final exercise in completedExercises) {
           final name = exercise['exercises']?['name_ko'] ??
               exercise['exercises']?['name'] ??
               'Exercise';
-          final sets = exercise['sets'] as List<dynamic>? ?? [];
+          final sets = exercise['set_records'] as List<dynamic>? ?? [];
+
+          // Calculate exercise volume
+          double exerciseVolume = 0;
+          for (final set in sets) {
+            final weight = (set['weight'] as num?)?.toDouble() ?? 0;
+            final reps = set['reps'] as int? ?? 0;
+            exerciseVolume += weight * reps;
+          }
 
           buffer.writeln('### $name');
+          buffer.writeln('');
           for (int i = 0; i < sets.length; i++) {
             final set = sets[i];
-            final weight = set['weight'] ?? 0;
-            final reps = set['reps'] ?? 0;
-            buffer.writeln('- 세트 ${i + 1}: ${weight}kg x ${reps}회');
+            final weight = (set['weight'] as num?)?.toDouble() ?? 0;
+            final reps = set['reps'] as int? ?? 0;
+            final rpe = set['rpe'] as num?;
+            final tags = set['tags'] as List<dynamic>? ?? [];
+
+            // Build set line with details
+            final weightStr = weight % 1 == 0 ? weight.toInt().toString() : weight.toStringAsFixed(1);
+            String setLine = '- 세트 ${i + 1}: ${weightStr}kg × ${reps}회';
+
+            // Add RPE if available
+            if (rpe != null) {
+              final rpeStr = rpe % 1 == 0 ? rpe.toInt().toString() : rpe.toStringAsFixed(1);
+              setLine += ' (RPE $rpeStr)';
+            }
+
+            // Add tags if available
+            if (tags.isNotEmpty) {
+              final tagEmojis = tags.map((t) => _getTagEmoji(t.toString())).join(' ');
+              setLine += ' $tagEmojis';
+            }
+
+            buffer.writeln(setLine);
           }
+
+          // Show exercise volume
+          final volumeStr = exerciseVolume % 1 == 0
+              ? exerciseVolume.toInt().toString()
+              : exerciseVolume.toStringAsFixed(0);
+          buffer.writeln('📊 볼륨: ${volumeStr}kg');
           buffer.writeln('');
         }
+
+        // Overall volume at the bottom
+        buffer.writeln('---\n');
+        final overallVolumeStr = overallVolume % 1 == 0
+            ? overallVolume.toInt().toString()
+            : overallVolume.toStringAsFixed(0);
+        buffer.writeln('## 📈 총 볼륨: ${overallVolumeStr}kg');
         break;
 
       case ReportType.summary:
         buffer.writeln('$clientName님, 오늘도 수고하셨습니다! 💪\n');
+        buffer.writeln('📅 ${date.year}년 ${date.month}월 ${date.day}일');
         buffer.writeln('⏱️ 운동 시간: $duration분');
-        buffer.writeln('🏋️ 운동 수: ${exercises.length}개\n');
+        buffer.writeln('🏋️ 운동 수: ${completedExercises.length}개\n');
+
+        // Exercise list with volume
+        buffer.writeln('## 운동 목록\n');
+        for (final exercise in completedExercises) {
+          final name = exercise['exercises']?['name_ko'] ??
+              exercise['exercises']?['name'] ??
+              'Exercise';
+          final sets = exercise['set_records'] as List<dynamic>? ?? [];
+
+          // Calculate exercise volume
+          double exerciseVolume = 0;
+          for (final set in sets) {
+            final weight = (set['weight'] as num?)?.toDouble() ?? 0;
+            final reps = set['reps'] as int? ?? 0;
+            exerciseVolume += weight * reps;
+          }
+
+          final volumeStr = exerciseVolume % 1 == 0
+              ? exerciseVolume.toInt().toString()
+              : exerciseVolume.toStringAsFixed(0);
+          buffer.writeln('• $name - ${sets.length}세트, ${volumeStr}kg');
+        }
+
+        buffer.writeln('');
+        final overallVolumeSummaryStr = overallVolume % 1 == 0
+            ? overallVolume.toInt().toString()
+            : overallVolume.toStringAsFixed(0);
+        buffer.writeln('📈 총 볼륨: ${overallVolumeSummaryStr}kg\n');
 
         if (highlights.isNotEmpty) {
           buffer.writeln('✨ 오늘의 하이라이트:');
@@ -342,7 +486,7 @@ class ReportRemoteDataSource {
       case ReportType.sms:
         buffer.write('[$clientName님] ');
         buffer.write('${date.month}/${date.day} 운동 완료! ');
-        buffer.write('${exercises.length}개 운동, $duration분. ');
+        buffer.write('${completedExercises.length}개 운동, $duration분. ');
         if (highlights.isNotEmpty) {
           buffer.write('${highlights.first.type.emoji} ${highlights.first.displayTitle}');
         }
@@ -394,6 +538,30 @@ class ReportRemoteDataSource {
             isDefault: true,
           ),
         ];
+    }
+  }
+
+  /// Convert tag string to emoji
+  String _getTagEmoji(String tag) {
+    switch (tag.toLowerCase()) {
+      case 'pr':
+        return '🏆';
+      case 'form_issue':
+        return '⚠️';
+      case 'pain':
+        return '🤕';
+      case 'fatigue':
+        return '😓';
+      case 'good_condition':
+        return '💪';
+      case 'warmup':
+        return '🔥';
+      case 'drop_set':
+        return '⬇️';
+      case 'failure_set':
+        return '💀';
+      default:
+        return '';
     }
   }
 }

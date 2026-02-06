@@ -10,6 +10,7 @@ class RepSelector extends StatelessWidget {
   final int minReps;
   final int maxReps;
   final List<int>? quickSelectValues;
+  final bool compact;
 
   const RepSelector({
     required this.reps,
@@ -17,12 +18,15 @@ class RepSelector extends StatelessWidget {
     this.minReps = 1,
     this.maxReps = 30,
     this.quickSelectValues,
+    this.compact = false,
     super.key,
   });
 
-  static const List<int> _defaultQuickValues = [6, 8, 10, 12, 15];
+  static const List<int> _defaultQuickValues = [3, 5, 8, 12, 15, 20];
+  static const List<int> _compactQuickValues = [3, 5, 8, 10, 12, 15, 20];
 
-  List<int> get _quickValues => quickSelectValues ?? _defaultQuickValues;
+  List<int> get _quickValues =>
+      quickSelectValues ?? (compact ? _compactQuickValues : _defaultQuickValues);
 
   void _selectReps(int value) {
     HapticFeedback.lightImpact();
@@ -37,6 +41,75 @@ class RepSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return _buildCompact();
+    }
+    return _buildFull();
+  }
+
+  Widget _buildCompact() {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.neutral200),
+      ),
+      child: Column(
+        children: [
+          // Reps display with +/- buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _RoundButton(
+                icon: Icons.remove,
+                onTap: () => _adjustReps(-1),
+                color: AppColors.neutral700,
+                compact: true,
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    reps.toString(),
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.neutralBlack,
+                    ),
+                  ),
+                ),
+              ),
+              _RoundButton(
+                icon: Icons.add,
+                onTap: () => _adjustReps(1),
+                color: AppColors.primary,
+                compact: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          // Quick select buttons
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: _quickValues.map((value) {
+              final isSelected = reps == value;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: _QuickRepButton(
+                  value: value,
+                  isSelected: isSelected,
+                  onTap: () => _selectReps(value),
+                  compact: true,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFull() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -119,15 +192,20 @@ class _RoundButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final Color color;
+  final bool compact;
 
   const _RoundButton({
     required this.icon,
     required this.onTap,
     required this.color,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final size = compact ? 32.0 : 48.0;
+    final iconSize = compact ? 18.0 : 24.0;
+
     return Material(
       color: color.withOpacity(0.1),
       shape: const CircleBorder(),
@@ -135,10 +213,10 @@ class _RoundButton extends StatelessWidget {
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: Container(
-          width: 48,
-          height: 48,
+          width: size,
+          height: size,
           alignment: Alignment.center,
-          child: Icon(icon, color: color, size: 24),
+          child: Icon(icon, color: color, size: iconSize),
         ),
       ),
     );
@@ -149,29 +227,31 @@ class _QuickRepButton extends StatelessWidget {
   final int value;
   final bool isSelected;
   final VoidCallback onTap;
+  final bool compact;
 
   const _QuickRepButton({
     required this.value,
     required this.isSelected,
     required this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? AppColors.primary : AppColors.surfaceElevated,
+      color: isSelected ? AppColors.primary : AppColors.neutral100,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
         child: Container(
-          width: 56,
-          height: 44,
+          width: compact ? 32 : 56,
+          height: compact ? 26 : 44,
           alignment: Alignment.center,
           child: Text(
             value.toString(),
             style: TextStyle(
-              fontSize: 18,
+              fontSize: compact ? 12 : 18,
               fontWeight: FontWeight.bold,
               color: isSelected ? AppColors.neutralWhite : AppColors.neutralBlack,
             ),

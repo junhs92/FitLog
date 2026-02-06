@@ -6,6 +6,7 @@ import '../../domain/entities/session_entity.dart';
 import '../../domain/entities/session_exercise_entity.dart';
 import '../../domain/repositories/session_repository.dart';
 import '../datasources/session_remote_datasource.dart';
+import '../models/session_exercise_input.dart';
 
 /// Implementation of SessionRepository
 class SessionRepositoryImpl implements SessionRepository {
@@ -59,7 +60,8 @@ class SessionRepositoryImpl implements SessionRepository {
     String? sessionType,
     String? notes,
     String? programId,
-    String? workoutDayId,
+    List<Map<String, dynamic>>? exercises,
+    String? aiReasoning,
   }) async {
     try {
       final session = await _remoteDataSource.startSession(
@@ -67,7 +69,46 @@ class SessionRepositoryImpl implements SessionRepository {
         sessionType: sessionType,
         notes: notes,
         programId: programId,
-        workoutDayId: workoutDayId,
+        exercises: exercises,
+        aiReasoning: aiReasoning,
+      );
+      return Right(session);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<SessionEntity>> activateSession({
+    required String sessionId,
+    List<Map<String, dynamic>>? exercises,
+  }) async {
+    try {
+      final session = await _remoteDataSource.activateSession(
+        sessionId: sessionId,
+        exercises: exercises,
+      );
+      return Right(session);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Result<SessionEntity>> createSession({
+    required String clientId,
+    List<SessionExerciseInput>? exercises,
+    String? programId,
+    String? existingSessionId,
+    String? aiReasoning,
+  }) async {
+    try {
+      final session = await _remoteDataSource.createSession(
+        clientId: clientId,
+        exercises: exercises,
+        programId: programId,
+        existingSessionId: existingSessionId,
+        aiReasoning: aiReasoning,
       );
       return Right(session);
     } catch (e) {
@@ -122,6 +163,24 @@ class SessionRepositoryImpl implements SessionRepository {
   }
 
   @override
+  Future<Result<SessionExerciseEntity>> addExerciseToSessionById({
+    required String sessionId,
+    required String exerciseId,
+    int? order,
+  }) async {
+    try {
+      final sessionExercise = await _remoteDataSource.addExerciseToSession(
+        sessionId: sessionId,
+        exerciseId: exerciseId,
+        order: order,
+      );
+      return Right(sessionExercise);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  @override
   Future<Result<void>> removeExerciseFromSession(
       String sessionExerciseId) async {
     try {
@@ -158,6 +217,7 @@ class SessionRepositoryImpl implements SessionRepository {
     Duration? duration,
     double? distance,
     List<SetTag> tags = const [],
+    List<String> comments = const [],
     String? notes,
   }) async {
     try {
@@ -171,6 +231,7 @@ class SessionRepositoryImpl implements SessionRepository {
         durationSeconds: duration?.inSeconds,
         distance: distance,
         tags: tagStrings,
+        comments: comments,
         notes: notes,
       );
       return Right(set);
@@ -253,15 +314,31 @@ class SessionRepositoryImpl implements SessionRepository {
   }
 
   @override
+  Future<Result<void>> updateSessionExerciseNotes({
+    required String sessionExerciseId,
+    required String notes,
+  }) async {
+    try {
+      await _remoteDataSource.updateSessionExerciseNotes(
+        sessionExerciseId: sessionExerciseId,
+        notes: notes,
+      );
+      return const Right(null);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  @override
   Future<Result<List<ExerciseEntity>>> getExercises({
     String? category,
-    String? movementPattern,
+    String? movementGroup,
     String? searchQuery,
   }) async {
     try {
       final exercises = await _remoteDataSource.getExercises(
         category: category,
-        movementPattern: movementPattern,
+        movementGroup: movementGroup,
         searchQuery: searchQuery,
       );
       return Right(exercises);

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../muscle_map/presentation/providers/muscle_activity_provider.dart';
+import '../../../muscle_map/presentation/widgets/report_muscle_map.dart';
+import '../../../active_session/presentation/providers/session_provider.dart';
+import '../../../active_session/presentation/widgets/achievement_card.dart';
 import '../../domain/entities/session_report.dart';
 import '../providers/report_provider.dart';
 
@@ -118,42 +124,63 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   }
 
   Widget _buildContent(SessionReportEntity report) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Report type selector
-          _ReportTypeSelector(
-            selectedType: _selectedType,
-            onTypeSelected: (type) {
-              setState(() {
-                _selectedType = type;
-              });
-              _generateReport();
-            },
+    return _buildVisualReportCard(report);
+  }
+
+  Widget _buildVisualReportCard(SessionReportEntity report) {
+    final visualDataAsync = ref.watch(visualReportDataProvider(widget.sessionId));
+
+    return visualDataAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, __) => const Center(child: Text('데이터를 불러올 수 없습니다')),
+      data: (visualData) {
+        if (visualData == null) {
+          return const Center(child: Text('세션 데이터가 없습니다'));
+        }
+
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              // Gradient Header
+              _ReportHeader(report: report, stats: visualData.stats),
+
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Stats Grid with actual data
+                    _StatsGridFromData(stats: visualData.stats),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // Achievements Section
+                    _AchievementsSection(sessionId: widget.sessionId),
+
+                    // Highlights Section
+                    if (report.highlights.isNotEmpty) ...[
+                      _VisualHighlightsSection(highlights: report.highlights),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+
+                    // Exercise List
+                    _ExerciseListSection(exercises: visualData.exercises),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // Muscle Map
+                    _MuscleMapSection(sessionId: widget.sessionId),
+                    const SizedBox(height: AppSpacing.lg),
+
+                    // Trainer Comment Section
+                    if (report.trainerComment != null &&
+                        report.trainerComment!.isNotEmpty)
+                      _TrainerMessageCard(comment: report.trainerComment!),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          // Highlights
-          if (report.highlights.isNotEmpty) ...[
-            _HighlightsSection(highlights: report.highlights),
-            const SizedBox(height: AppSpacing.lg),
-          ],
-          // Report content
-          _ReportContentCard(report: report),
-          const SizedBox(height: AppSpacing.lg),
-          // Trainer comment
-          _TrainerCommentSection(
-            controller: _commentController,
-            initialComment: report.trainerComment,
-            onSave: () {
-              ref.read(reportGenerationProvider.notifier)
-                  .updateComment(_commentController.text);
-            },
-          ),
-          const SizedBox(height: AppSpacing.xl),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -191,9 +218,21 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
               ],
             ),
             const SizedBox(height: AppSpacing.sm),
-            // Secondary actions
+            // Secondary actions - first row
             Row(
               children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _generateAndShareLink(report),
+                    icon: const Icon(Icons.link),
+                    label: const Text('Share Link'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      foregroundColor: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _generatePdf(report),
@@ -204,7 +243,12 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.sm),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            // Secondary actions - second row
+            Row(
+              children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => _sendViaKakao(report),
@@ -220,7 +264,7 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _shareReport(report),
                     icon: const Icon(Icons.share),
-                    label: const Text('Share'),
+                    label: const Text('Copy'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
@@ -321,8 +365,66 @@ class _ReportViewScreenState extends ConsumerState<ReportViewScreen> {
   }
 
   void _shareReport(SessionReportEntity report) {
-    // TODO: Implement native share
     _copyToClipboard(report.content);
+  }
+
+  Future<void> _generateAndShareLink(SessionReportEntity report) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Check if we already have an HTML URL
+    if (report.htmlUrl != null && report.htmlUrl!.isNotEmpty) {
+      await Share.share(
+        '${report.title}\n\n${report.htmlUrl}',
+        subject: report.title,
+      );
+      return;
+    }
+
+    // Generate new HTML report
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('Creating shareable link...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    try {
+      final htmlUrl = await ref.read(reportGenerationProvider.notifier).generateHtmlReport();
+
+      messenger.hideCurrentSnackBar();
+
+      if (htmlUrl != null) {
+        await Share.share(
+          '${report.title}\n\n$htmlUrl',
+          subject: report.title,
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Failed to generate shareable link'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 }
 
@@ -431,6 +533,55 @@ class _HighlightsSection extends StatelessWidget {
   }
 }
 
+/// Section showing muscles worked in the session
+class _MuscleMapSection extends ConsumerWidget {
+  final String sessionId;
+
+  const _MuscleMapSection({required this.sessionId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final muscleActivityAsync = ref.watch(sessionMuscleActivityProvider(sessionId));
+
+    return muscleActivityAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (activity) {
+        if (activity.musclesWorked.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return ReportMuscleMap(sessionActivity: activity);
+      },
+    );
+  }
+}
+
+/// Section showing auto-detected achievements for the session
+class _AchievementsSection extends ConsumerWidget {
+  final String sessionId;
+
+  const _AchievementsSection({required this.sessionId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final achievementsAsync = ref.watch(sessionAchievementsProvider(sessionId));
+
+    return achievementsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (achievements) {
+        if (achievements.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+          child: AchievementSection(achievements: achievements),
+        );
+      },
+    );
+  }
+}
+
 class _HighlightChip extends StatelessWidget {
   final ReportHighlight highlight;
 
@@ -514,12 +665,41 @@ class _ReportContentCard extends StatelessWidget {
             ],
           ),
           const Divider(height: 24),
-          Text(
-            report.content,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.neutral700,
-              height: 1.6,
+          MarkdownBody(
+            data: report.content,
+            selectable: true,
+            styleSheet: MarkdownStyleSheet(
+              h1: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.neutralBlack,
+              ),
+              h2: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+              h3: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.neutral800,
+              ),
+              p: const TextStyle(
+                fontSize: 14,
+                color: AppColors.neutral700,
+                height: 1.6,
+              ),
+              listBullet: const TextStyle(
+                fontSize: 14,
+                color: AppColors.neutral700,
+              ),
+              horizontalRuleDecoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: AppColors.neutral300, width: 1),
+                ),
+              ),
+              blockSpacing: 12,
+              listIndent: 16,
             ),
           ),
         ],
@@ -883,6 +1063,765 @@ class _DeliveryOption extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Visual Report Header with gradient background
+class _ReportHeader extends StatelessWidget {
+  final SessionReportEntity report;
+  final VisualReportStats? stats;
+
+  const _ReportHeader({required this.report, this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF667eea),
+            Color(0xFF764ba2),
+          ],
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.fitness_center, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    report.title,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today, color: Colors.white70, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  _formatDate(stats?.sessionDate ?? report.generatedAt),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white70,
+                  ),
+                ),
+                if (stats != null) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.timer, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${stats!.durationMinutes}분',
+                    style: const TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}년 ${date.month}월 ${date.day}일';
+  }
+}
+
+/// Individual stat card
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  const _StatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.neutral600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Stats Grid using actual data from provider
+class _StatsGridFromData extends StatelessWidget {
+  final VisualReportStats stats;
+
+  const _StatsGridFromData({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '운동 통계',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.neutralBlack,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                icon: Icons.fitness_center,
+                value: '${stats.exerciseCount}',
+                label: '운동',
+                color: const Color(0xFF667eea),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.repeat,
+                value: '${stats.totalSets}',
+                label: '세트',
+                color: const Color(0xFF764ba2),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _StatCard(
+                icon: Icons.trending_up,
+                value: _formatVolume(stats.totalVolume),
+                label: '총 볼륨',
+                color: const Color(0xFFf093fb),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatCard(
+                icon: Icons.numbers,
+                value: '${stats.totalReps}',
+                label: '총 반복',
+                color: const Color(0xFF4facfe),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatVolume(double volume) {
+    if (volume >= 1000) {
+      return '${(volume / 1000).toStringAsFixed(1)}t';
+    }
+    return '${volume.toStringAsFixed(0)}kg';
+  }
+}
+
+/// Exercise List Section showing all exercises with details
+class _ExerciseListSection extends StatelessWidget {
+  final List<VisualReportExercise> exercises;
+
+  const _ExerciseListSection({required this.exercises});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '운동 내역',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.neutralBlack,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...exercises.map((e) => _ExerciseDetailCard(exercise: e)),
+      ],
+    );
+  }
+}
+
+/// Individual exercise card with sets and comparison
+class _ExerciseDetailCard extends StatelessWidget {
+  final VisualReportExercise exercise;
+
+  const _ExerciseDetailCard({required this.exercise});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Exercise Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF667eea).withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    exercise.displayName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.neutralBlack,
+                    ),
+                  ),
+                ),
+                // Show comparison badge
+                if (exercise.volumeChange != null) _buildChangeBadge(),
+              ],
+            ),
+          ),
+          // Sets Table
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // Header row
+                const Row(
+                  children: [
+                    SizedBox(width: 40, child: Text('세트', style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.neutral500))),
+                    Expanded(child: Text('무게', textAlign: TextAlign.center, style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.neutral500))),
+                    Expanded(child: Text('반복', textAlign: TextAlign.center, style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.neutral500))),
+                    SizedBox(width: 50, child: Text('RPE', textAlign: TextAlign.center, style: TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.neutral500))),
+                  ],
+                ),
+                const Divider(height: 16),
+                // Set rows
+                ...exercise.sets.map((set) => _buildSetRow(set)),
+              ],
+            ),
+          ),
+          // Trainer Comments Section (if any)
+          if (exercise.hasTrainerComments)
+            _ExerciseTrainerCommentsSection(comments: exercise.trainerComments),
+          // Summary footer
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.only(
+                bottomLeft: const Radius.circular(16),
+                bottomRight: const Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildSummaryItem('볼륨', _formatWeight(exercise.totalVolume)),
+                _buildSummaryItem('최대 무게', '${_formatWeight(exercise.maxWeight)}kg'),
+                _buildSummaryItem('총 반복', '${exercise.totalReps}회'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChangeBadge() {
+    final change = exercise.volumeChange!;
+    final isPositive = change >= 0;
+    final color = isPositive ? const Color(0xFF10b981) : const Color(0xFFef4444);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPositive ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            '${change.abs().toStringAsFixed(0)}%',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSetRow(VisualReportSet set) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 40,
+            child: Row(
+              children: [
+                Text(
+                  '${set.setNumber}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (set.isPR) ...[
+                  const SizedBox(width: 4),
+                  const Text('🏆', style: TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '${_formatWeight(set.weight)}kg',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '${set.reps}회',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+          SizedBox(
+            width: 50,
+            child: Text(
+              set.rpe != null ? set.rpe!.toStringAsFixed(0) : '-',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: set.rpe != null ? _getRpeColor(set.rpe!) : AppColors.neutral400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryItem(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF667eea),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.neutral500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatWeight(double weight) {
+    return weight % 1 == 0 ? weight.toInt().toString() : weight.toStringAsFixed(1);
+  }
+
+  Color _getRpeColor(double rpe) {
+    if (rpe >= 9) return const Color(0xFFef4444);
+    if (rpe >= 7) return const Color(0xFFf59e0b);
+    return const Color(0xFF10b981);
+  }
+}
+
+/// Trainer comments section for individual exercise
+class _ExerciseTrainerCommentsSection extends StatelessWidget {
+  final List<VisualReportTrainerComment> comments;
+
+  const _ExerciseTrainerCommentsSection({required this.comments});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                Icons.comment,
+                size: 16,
+                color: const Color(0xFF667eea),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                '트레이너 코멘트',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF667eea),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: comments.map((c) => _TrainerCommentChip(comment: c)).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Individual trainer comment chip
+class _TrainerCommentChip extends StatelessWidget {
+  final VisualReportTrainerComment comment;
+
+  const _TrainerCommentChip({required this.comment});
+
+  Color get _chipColor {
+    // Determine color based on comment key/category
+    final key = comment.key.toLowerCase();
+    if (key.contains('pain') || key.contains('fatigue') || key.contains('weak') ||
+        key.contains('breakdown') || key.contains('issue') || key.contains('loss')) {
+      return const Color(0xFFef4444); // Red for condition/warning
+    } else if (key.contains('squeeze') || key.contains('feel') || key.contains('mind') ||
+        key.contains('control') || key.contains('explosive') || key.contains('breathe') ||
+        key.contains('rom') || key.contains('pause')) {
+      return const Color(0xFF10b981); // Green for coaching cues
+    } else {
+      return const Color(0xFFf59e0b); // Amber for common mistakes
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _chipColor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: color.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            comment.displayName,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: color,
+            ),
+          ),
+        ),
+        // Show detail below chip if exists
+        if (comment.detail != null && comment.detail!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 4),
+            child: Text(
+              '→ ${comment.detail}',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.neutral600,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Visual highlights section with beautiful cards
+class _VisualHighlightsSection extends StatelessWidget {
+  final List<ReportHighlight> highlights;
+
+  const _VisualHighlightsSection({required this.highlights});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '오늘의 하이라이트',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.neutralBlack,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...highlights.map((h) => _VisualHighlightCard(highlight: h)),
+      ],
+    );
+  }
+}
+
+/// Individual highlight card with gradient border
+class _VisualHighlightCard extends StatelessWidget {
+  final ReportHighlight highlight;
+
+  const _VisualHighlightCard({required this.highlight});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getColor();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Text(
+                  highlight.type.emoji,
+                  style: const TextStyle(fontSize: 24),
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    highlight.displayTitle,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  if (highlight.description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      highlight.displayDescription,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.neutral600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getColor() {
+    switch (highlight.type) {
+      case HighlightType.pr:
+        return const Color(0xFFf59e0b);
+      case HighlightType.improvement:
+        return const Color(0xFF10b981);
+      case HighlightType.consistency:
+        return const Color(0xFF667eea);
+      case HighlightType.effort:
+        return const Color(0xFFec4899);
+      case HighlightType.milestone:
+        return const Color(0xFF8b5cf6);
+      case HighlightType.caution:
+        return const Color(0xFFef4444);
+    }
+  }
+}
+
+/// Trainer message card
+class _TrainerMessageCard extends StatelessWidget {
+  final String comment;
+
+  const _TrainerMessageCard({required this.comment});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF667eea).withValues(alpha: 0.1),
+            const Color(0xFF764ba2).withValues(alpha: 0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF667eea).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF667eea).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.message,
+                  color: Color(0xFF667eea),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                '트레이너 코멘트',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF667eea),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            comment,
+            style: const TextStyle(
+              fontSize: 15,
+              color: AppColors.neutral700,
+              height: 1.6,
+            ),
+          ),
+        ],
       ),
     );
   }

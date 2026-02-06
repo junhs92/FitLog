@@ -8,10 +8,16 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
 import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
+import '../../../calendar/domain/entities/session_package.dart';
+import '../../../calendar/presentation/providers/calendar_provider.dart';
+import '../../../calendar/presentation/widgets/quick_schedule_sheet.dart';
+import '../../../muscle_map/muscle_map.dart';
 import '../../../trainer_home/presentation/providers/trainer_home_provider.dart';
 import '../../domain/entities/client_entity.dart';
 import '../providers/client_provider.dart';
 import '../widgets/client_form.dart';
+import '../widgets/lifestyle_summary_card.dart';
+import '../widgets/recent_sessions_card.dart';
 
 /// Screen for viewing and editing client details
 class ClientDetailScreen extends ConsumerStatefulWidget {
@@ -56,18 +62,16 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Client' : 'Client Details'),
+        title: clientAsync.maybeWhen(
+          data: (client) => Text(_isEditing ? 'Edit Client' : client.name),
+          orElse: () => Text(_isEditing ? 'Edit Client' : 'Client Details'),
+        ),
         actions: [
           if (!_isEditing)
             IconButton(
-              icon: const Icon(Icons.auto_awesome),
-              tooltip: 'Generate AI Program',
-              onPressed: () {
-                final client = ref.read(clientProvider(widget.clientId)).valueOrNull;
-                if (client != null) {
-                  context.push('/trainer/program/generate/${widget.clientId}?name=${Uri.encodeComponent(client.name)}');
-                }
-              },
+              icon: const Icon(Icons.calendar_month),
+              tooltip: 'Schedule Lesson',
+              onPressed: () => _showScheduleSheet(context),
             ),
           if (!_isEditing)
             IconButton(
@@ -136,19 +140,46 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
       floatingActionButton: _isEditing
           ? null
           : clientAsync.maybeWhen(
-              data: (client) => FloatingActionButton.extended(
-                onPressed: () {
-                  final trainerIdAsync = ref.read(trainerIdProvider);
-                  final trainerId = trainerIdAsync.valueOrNull ?? '';
-                  ProgramSelectionSheet.show(
-                    context: context,
-                    clientId: widget.clientId,
-                    clientName: client.name,
-                    trainerId: trainerId,
-                  );
-                },
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('세션 시작'),
+              data: (client) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Schedule lesson FAB
+                  SizedBox(
+                    width: 130,
+                    height: 48,
+                    child: FloatingActionButton.extended(
+                      heroTag: 'schedule_fab',
+                      onPressed: () => _showScheduleSheet(context),
+                      backgroundColor: AppColors.neutral100,
+                      foregroundColor: AppColors.primary,
+                      elevation: 2,
+                      icon: const Icon(Icons.add),
+                      label: const Text('예약'),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  // Start session FAB
+                  SizedBox(
+                    width: 130,
+                    height: 48,
+                    child: FloatingActionButton.extended(
+                      heroTag: 'session_fab',
+                      onPressed: () {
+                        final trainerIdAsync = ref.read(trainerIdProvider);
+                        final trainerId = trainerIdAsync.valueOrNull ?? '';
+                        ProgramSelectionSheet.show(
+                          context: context,
+                          ref: ref,
+                          clientId: widget.clientId,
+                          clientName: client.name,
+                          trainerId: trainerId,
+                        );
+                      },
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('세션 시작'),
+                    ),
+                  ),
+                ],
               ),
               orElse: () => null,
             ),
@@ -178,9 +209,81 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                           color: AppColors.neutral700,
                         ),
                   ),
+                // Remaining Sessions Display
+                _buildSessionsRemaining(ref),
+                // Fitness Goals (shown prominently under age)
+                if (client.goals.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    alignment: WrapAlignment.center,
+                    children: client.goals.map((goal) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Text(
+                          goal,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ],
             ),
           ),
+          const SizedBox(height: AppSpacing.xl),
+
+          // 7-Day Lifestyle Summary (Flow 0)
+          LifestyleSummaryCard(clientId: widget.clientId),
+          const SizedBox(height: AppSpacing.xl),
+
+          // 7-Day Muscle Activity Map (Pre-Session Planning)
+          Consumer(
+            builder: (context, ref, child) {
+              final muscleMapAsync = ref.watch(
+                clientMuscleMapProvider((clientId: widget.clientId, dayRange: 7)),
+              );
+              return muscleMapAsync.when(
+                data: (muscleMap) => MiniMuscleMap(
+                  muscleMap: muscleMap,
+                  onTap: () {
+                    context.push('/trainer/clients/${widget.clientId}/stats?tab=muscles');
+                  },
+                ),
+                loading: () => Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+                error: (_, __) => const SizedBox.shrink(),
+              );
+            },
+          ),
+          const SizedBox(height: AppSpacing.xl),
+
+          // Recent Sessions (3 most recent completed)
+          RecentSessionsCard(clientId: widget.clientId),
           const SizedBox(height: AppSpacing.xl),
 
           // Contact info
@@ -211,22 +314,6 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                   ),
                 if (client.gender != null)
                   _buildInfoRow(Icons.person_outline, client.gender!),
-              ],
-            ),
-
-          // Goals
-          if (client.goals.isNotEmpty)
-            _buildSection(
-              context,
-              'Fitness Goals',
-              [
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: client.goals
-                      .map((goal) => Chip(label: Text(goal)))
-                      .toList(),
-                ),
               ],
             ),
 
@@ -308,6 +395,91 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
           Text(text),
         ],
       ),
+    );
+  }
+
+  Widget _buildSessionsRemaining(WidgetRef ref) {
+    final packageAsync = ref.watch(clientSessionPackageProvider(widget.clientId));
+
+    return packageAsync.when(
+      data: (package) {
+        if (package == null) {
+          return const SizedBox(height: AppSpacing.xs);
+        }
+
+        final remaining = package.sessionsRemaining;
+        final total = package.totalSessions;
+        final warningLevel = package.warningLevel;
+
+        // Choose color based on warning level
+        Color textColor;
+        Color bgColor;
+        switch (warningLevel) {
+          case PackageWarningLevel.critical:
+          case PackageWarningLevel.expired:
+            textColor = AppColors.error;
+            bgColor = AppColors.error.withValues(alpha: 0.1);
+            break;
+          case PackageWarningLevel.low:
+            textColor = AppColors.warning;
+            bgColor = AppColors.warning.withValues(alpha: 0.1);
+            break;
+          case PackageWarningLevel.none:
+            textColor = AppColors.success;
+            bgColor = AppColors.success.withValues(alpha: 0.1);
+            break;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.sm),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.confirmation_number_outlined,
+                  size: 16,
+                  color: textColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '남은 세션: $remaining / $total회',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.only(top: AppSpacing.sm),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      error: (_, __) => const SizedBox(height: AppSpacing.xs),
+    );
+  }
+
+  void _showScheduleSheet(BuildContext context) {
+    showQuickScheduleSheet(
+      context,
+      initialClientId: widget.clientId,
+      initialDate: DateTime.now(),
     );
   }
 

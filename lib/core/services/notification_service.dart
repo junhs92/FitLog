@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/timestamp_utils.dart';
 
 /// Notification types supported by the app
 enum NotificationType {
@@ -178,7 +179,7 @@ class NotificationService {
       'user_id': userId,
       'token': token,
       'platform': _getPlatform(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nowLocalIso8601(),
     });
   }
 
@@ -203,7 +204,7 @@ class NotificationService {
       'body': body,
       'data': data,
       'is_read': false,
-      'created_at': DateTime.now().toIso8601String(),
+      'created_at': nowLocalIso8601(),
     });
 
     // TODO: Trigger FCM push notification via Edge Function
@@ -252,7 +253,7 @@ class NotificationService {
   Future<void> markAsRead(String notificationId) async {
     await _client.from('notifications').update({
       'is_read': true,
-      'read_at': DateTime.now().toIso8601String(),
+      'read_at': nowLocalIso8601(),
     }).eq('id', notificationId);
   }
 
@@ -265,7 +266,7 @@ class NotificationService {
         .from('notifications')
         .update({
           'is_read': true,
-          'read_at': DateTime.now().toIso8601String(),
+          'read_at': nowLocalIso8601(),
         })
         .eq('user_id', userId)
         .eq('is_read', false);
@@ -311,7 +312,7 @@ class NotificationService {
     await _client.from('notification_preferences').upsert({
       'user_id': userId,
       ...prefs.toJson(),
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nowLocalIso8601(),
     });
   }
 

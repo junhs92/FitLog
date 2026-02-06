@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../shared/widgets/buttons/primary_button.dart';
+import '../../../../shared/widgets/common/exercise_video_popup.dart';
 import '../../domain/entities/session_exercise_entity.dart';
 import '../../domain/entities/exercise_set_entity.dart';
 import '../../domain/entities/exercise_entity.dart';
@@ -19,6 +20,7 @@ import '../widgets/exercise_history_display.dart';
 import '../../domain/entities/set_comment.dart';
 import '../widgets/session_timer.dart';
 import '../widgets/rest_timer_widget.dart';
+import '../widgets/countdown_timer.dart';
 import '../../../ai_workout/presentation/widgets/difficulty_feedback_widget.dart';
 import '../../../ai_workout/domain/entities/session_feedback.dart';
 import '../../../ai_workout/presentation/providers/ai_workout_provider.dart';
@@ -479,6 +481,8 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
           onTap: (index) {
             ref.read(activeSessionProvider.notifier).goToExercise(index);
           },
+          exerciseComments: state.exerciseComments,
+          currentComments: state.currentComments,
         ),
         // Main logging area
         Expanded(
@@ -498,15 +502,37 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                   targetSets: targetSets,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                // Current exercise header
-                Text(
-                  currentExercise.exercise.displayName,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
-                  ),
-                  textAlign: TextAlign.center,
+                // Current exercise header with watch video button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        currentExercise.exercise.displayName,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.neutralBlack,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    if (currentExercise.exercise.hasMedia)
+                      IconButton(
+                        onPressed: () => ExerciseVideoPopup.show(
+                          context,
+                          exercise: currentExercise.exercise,
+                        ),
+                        icon: const Icon(
+                          Icons.play_circle_outline,
+                          color: AppColors.primary,
+                        ),
+                        iconSize: 28,
+                        tooltip: '운동 영상 보기',
+                        padding: const EdgeInsets.only(left: AppSpacing.xs),
+                        constraints: const BoxConstraints(),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 // Inline rest timer (below exercise name)
@@ -568,65 +594,116 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Weight adjuster
-                          const Text(
-                            'Weight',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.neutral700,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          WeightAdjuster(
-                            weight: state.currentWeight,
-                            onChanged: (weight) {
-                              ref
-                                  .read(activeSessionProvider.notifier)
-                                  .setWeight(weight);
-                            },
-                            compact: true,
+                          // Reps/Timer toggle
+                          _RepsTimerToggle(
+                            isTimerMode: state.isTimerMode,
+                            onToggle: () => ref
+                                .read(activeSessionProvider.notifier)
+                                .toggleTimerMode(),
                           ),
                           const SizedBox(height: AppSpacing.md),
-                          // Rep selector
-                          const Text(
-                            'Reps',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.neutral700,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          RepSelector(
-                            reps: state.currentReps,
-                            onChanged: (reps) {
-                              ref
+                          // Conditional: Timer mode or Reps mode
+                          if (state.isTimerMode) ...[
+                            // Timer mode: CountdownTimer + RPE
+                            CountdownTimer(
+                              duration: state.currentDuration,
+                              remaining: state.countdownRemaining,
+                              isRunning: state.isCountdownRunning,
+                              onStart: () => ref
                                   .read(activeSessionProvider.notifier)
-                                  .setReps(reps);
-                            },
-                            compact: true,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          // RPE slider
-                          const Text(
-                            'RPE',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.neutral700,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.xs),
-                          RpeSlider(
-                            rpe: state.currentRpe,
-                            onChanged: (rpe) {
-                              ref
+                                  .startCountdown(),
+                              onPause: () => ref
                                   .read(activeSessionProvider.notifier)
-                                  .setRpe(rpe);
-                            },
-                            compact: true,
-                          ),
+                                  .pauseCountdown(),
+                              onReset: () => ref
+                                  .read(activeSessionProvider.notifier)
+                                  .resetCountdown(),
+                              onDurationChanged: (duration) => ref
+                                  .read(activeSessionProvider.notifier)
+                                  .setDuration(duration),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            // RPE slider for timer mode
+                            const Text(
+                              'RPE',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.neutral700,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            RpeSlider(
+                              rpe: state.currentRpe,
+                              onChanged: (rpe) {
+                                ref
+                                    .read(activeSessionProvider.notifier)
+                                    .setRpe(rpe);
+                              },
+                              compact: true,
+                            ),
+                          ] else ...[
+                            // Reps mode: Weight + Reps + RPE
+                            // Weight adjuster
+                            _WeightLabel(
+                              isBodyweight: currentExercise.exercise.isBodyweight,
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            Opacity(
+                              opacity: currentExercise.exercise.isBodyweight
+                                  ? 0.6
+                                  : 1.0,
+                              child: WeightAdjuster(
+                                weight: state.currentWeight,
+                                onChanged: (weight) {
+                                  ref
+                                      .read(activeSessionProvider.notifier)
+                                      .setWeight(weight);
+                                },
+                                compact: true,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            // Rep selector
+                            const Text(
+                              'Reps',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.neutral700,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            RepSelector(
+                              reps: state.currentReps,
+                              onChanged: (reps) {
+                                ref
+                                    .read(activeSessionProvider.notifier)
+                                    .setReps(reps);
+                              },
+                              compact: true,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            // RPE slider
+                            const Text(
+                              'RPE',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.neutral700,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.xs),
+                            RpeSlider(
+                              rpe: state.currentRpe,
+                              onChanged: (rpe) {
+                                ref
+                                    .read(activeSessionProvider.notifier)
+                                    .setRpe(rpe);
+                              },
+                              compact: true,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -653,11 +730,15 @@ class _ExerciseTabs extends StatelessWidget {
   final List<SessionExerciseEntity> exercises;
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final Map<String, List<SetComment>> exerciseComments;
+  final List<SetComment> currentComments;
 
   const _ExerciseTabs({
     required this.exercises,
     required this.currentIndex,
     required this.onTap,
+    required this.exerciseComments,
+    required this.currentComments,
   });
 
   @override
@@ -678,6 +759,10 @@ class _ExerciseTabs extends StatelessWidget {
           final exercise = exercises[index];
           final isSelected = index == currentIndex;
           final isCompleted = exercise.isCompleted;
+          // Check if this exercise has comments
+          final hasComments = index == currentIndex
+              ? currentComments.isNotEmpty
+              : (exerciseComments[exercise.id]?.isNotEmpty ?? false);
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -716,6 +801,17 @@ class _ExerciseTabs extends StatelessWidget {
                               : AppColors.neutralBlack,
                         ),
                       ),
+                      // Comment indicator
+                      if (hasComments) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.comment,
+                          size: 14,
+                          color: isSelected
+                              ? AppColors.neutralWhite
+                              : AppColors.primary,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -765,6 +861,11 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
     final sessionState = ref.watch(activeSessionProvider);
     final currentExercise = sessionState.currentExercise;
     final currentGroup = currentExercise?.exercise.movementGroup;
+
+    // Get exercise IDs already in session to exclude them from the picker
+    final exerciseIdsInSession = sessionState.session?.exercises
+        .map((e) => e.exercise.id)
+        .toSet() ?? <String>{};
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -892,7 +993,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                 }
 
                 // Apply muscle group filter
-                final exercises = _selectedMuscleGroup == null
+                var exercises = _selectedMuscleGroup == null
                     ? allExercises
                     : allExercises.where((e) {
                         final muscleGroupStr = e.muscleGroup?.toLowerCase();
@@ -901,7 +1002,15 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                                muscleGroupStr == _selectedMuscleGroup!.name;
                       }).toList();
 
+                // Filter out exercises already in session
+                exercises = exercises.where((e) => !exerciseIdsInSession.contains(e.id)).toList();
+
                 if (exercises.isEmpty) {
+                  // Show appropriate empty state based on filter
+                  final emptyMessage = _selectedMuscleGroup != null
+                      ? '${_selectedMuscleGroup!.displayNameKo} 운동이 없습니다'
+                      : '추가할 수 있는 운동이 없습니다';
+
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -909,22 +1018,26 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                         Icon(Icons.search_off, size: 48, color: AppColors.neutral400),
                         const SizedBox(height: AppSpacing.md),
                         Text(
-                          '${_selectedMuscleGroup!.displayNameKo} 운동이 없습니다',
+                          emptyMessage,
                           style: const TextStyle(color: AppColors.neutral500),
                         ),
-                        const SizedBox(height: AppSpacing.sm),
-                        TextButton(
-                          onPressed: () => setState(() => _selectedMuscleGroup = null),
-                          child: const Text('전체 보기'),
-                        ),
+                        if (_selectedMuscleGroup != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          TextButton(
+                            onPressed: () => setState(() => _selectedMuscleGroup = null),
+                            child: const Text('전체 보기'),
+                          ),
+                        ],
                       ],
                     ),
                   );
                 }
 
-                // Get recommendations data
+                // Get recommendations data and filter out exercises already in session
                 final recommendationsState = recommendationsAsync.valueOrNull;
-                final recommendations = recommendationsState?.recommendations ?? [];
+                final recommendations = (recommendationsState?.recommendations ?? [])
+                    .where((r) => !exerciseIdsInSession.contains(r.exercise.id))
+                    .toList();
                 final recommendedGroupOrder = recommendationsState?.recommendedGroupOrder ?? MovementGroup.all;
 
                 // Group exercises by movement group
@@ -2405,6 +2518,100 @@ class _SetCompleteOrSkipButton extends ConsumerWidget {
       onPressed: onSetComplete,
       isLoading: isLoading,
       icon: Icons.check,
+    );
+  }
+}
+
+/// Toggle switch between Reps mode and Timer mode
+class _RepsTimerToggle extends StatelessWidget {
+  final bool isTimerMode;
+  final VoidCallback onToggle;
+
+  const _RepsTimerToggle({
+    required this.isTimerMode,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.neutral100,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Reps',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isTimerMode ? FontWeight.normal : FontWeight.bold,
+              color: isTimerMode ? AppColors.neutral500 : AppColors.neutral800,
+            ),
+          ),
+          Switch(
+            value: isTimerMode,
+            onChanged: (_) => onToggle(),
+            activeColor: AppColors.primary,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          Icon(
+            Icons.timer,
+            size: 14,
+            color: isTimerMode ? AppColors.neutral800 : AppColors.neutral500,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            'Timer',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isTimerMode ? FontWeight.bold : FontWeight.normal,
+              color: isTimerMode ? AppColors.neutral800 : AppColors.neutral500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Weight label that shows "(optional)" for bodyweight exercises
+class _WeightLabel extends StatelessWidget {
+  final bool isBodyweight;
+
+  const _WeightLabel({
+    required this.isBodyweight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Text(
+          'Weight',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.neutral700,
+          ),
+        ),
+        if (isBodyweight) ...[
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '(optional)',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.normal,
+              color: AppColors.neutral500,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

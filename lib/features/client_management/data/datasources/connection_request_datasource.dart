@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 import '../../domain/entities/connection_request_entity.dart';
 
 /// Data source for connection request operations
@@ -203,7 +204,7 @@ class ConnectionRequestDataSource {
         .from('connection_requests')
         .update({
           'status': 'approved',
-          'responded_at': DateTime.now().toIso8601String(),
+          'responded_at': nowLocalIso8601(),
         })
         .eq('id', requestId);
 
@@ -222,7 +223,7 @@ class ConnectionRequestDataSource {
 
     // Create or update trainer_client_relationships entry
     // Use upsert to handle reconnecting with previously ended relationships
-    final now = DateTime.now().toIso8601String();
+    final now = nowLocalIso8601();
     final invitationSentAt = request['created_at'] as String?;
 
     try {
@@ -258,7 +259,7 @@ class ConnectionRequestDataSource {
         .from('connection_requests')
         .update({
           'status': 'rejected',
-          'responded_at': DateTime.now().toIso8601String(),
+          'responded_at': nowLocalIso8601(),
         })
         .eq('id', requestId)
         .eq('client_id', clientId);

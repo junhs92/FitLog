@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 
 /// Session preview data for dashboard
 class SessionPreview {
+  final String clientId;
   final String clientName;
   final String clientInitials;
   final String? profilePhotoUrl;
   final DateTime scheduledTime;
   final bool isCompleted;
+  final bool isNoShow;
 
   const SessionPreview({
+    required this.clientId,
     required this.clientName,
     required this.clientInitials,
     this.profilePhotoUrl,
     required this.scheduledTime,
     this.isCompleted = false,
+    this.isNoShow = false,
   });
 }
 
@@ -45,7 +50,7 @@ class TodaySessionsCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Today's Sessions",
+                  "Today's Schedule",
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -82,7 +87,7 @@ class TodaySessionsCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'No sessions scheduled for today',
+              'No appointments scheduled for today',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.neutral700,
                   ),
@@ -181,10 +186,6 @@ class TodaySessionsCard extends StatelessWidget {
   }
 
   String _formatTime(DateTime time) {
-    final hour = time.hour;
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = hour >= 12 ? 'PM' : 'AM';
-    final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
-    return '$displayHour:$minute $period';
+    return DateFormat('h:mm a').format(time.toLocal());
   }
 }

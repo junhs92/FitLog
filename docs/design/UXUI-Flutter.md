@@ -1,7 +1,7 @@
 # FitLog Pro - Flutter UI/UX Implementation Guide
 
-**Version:** 1.0
-**Last Updated:** December 2024
+**Version:** 1.1
+**Last Updated:** December 2024 (Session Input Widgets updated)
 **Parent Document:** UXUI.md v1.0
 **Purpose:** Flutter-specific widget specifications and design system implementation
 
@@ -1211,6 +1211,122 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
 ---
 
 ## 5. Zero-Typing Interface
+
+### 5.0 Session Input Widgets
+
+The active session screen uses specialized zero-typing input widgets for rapid data entry during workouts.
+
+#### 5.0.1 Weight Adjuster
+
+**File:** `lib/features/active_session/presentation/widgets/weight_adjuster.dart`
+
+**Layout:**
+```
+        [ - ]  [ 45 kg ]  [ + ]     ← ±0.5kg fine adjustment
+    [ -10 ] [ -5 ] [-2.5]  [+2.5] [ +5 ] [+10]  ← Quick adjustment buttons
+```
+
+**Features:**
+- Central weight display (48px bold font)
+- Circular -, + buttons for 0.5kg increments (fine tuning)
+- Quick adjustment row: -10, -5, -2.5, +2.5, +5, +10 kg
+- Red color for decrement, green for increment
+- Haptic feedback on all interactions
+- Clamped to 0-500kg range
+
+#### 5.0.2 Rep Selector
+
+**File:** `lib/features/active_session/presentation/widgets/rep_selector.dart`
+
+**Layout:**
+```
+        [ - ]  [ 12 reps ]  [ + ]
+    [ 3 ] [ 5 ] [ 8 ] [ 12 ] [ 15 ] [ 20 ]   ← Preset buttons
+```
+
+**Features:**
+- Central reps display (48px bold font)
+- Circular -, + buttons for single rep adjustment
+- Preset buttons: 3, 5, 8, 12, 15, 20 reps
+- Selected preset highlighted with primary color
+- Haptic feedback on all interactions
+- Clamped to 1-30 reps range
+
+#### 5.0.3 RPE Slider
+
+**File:** `lib/features/active_session/presentation/widgets/rpe_slider.dart`
+
+**Layout:**
+```
+    [ - ]  [ 😤 RPE 8 Hard ]  [ + ]    ← -, + works 1-10 range
+         [ 4 ] [ 5 ] [ 6 ] [ 7 ] [ 8 ] [ 9 ]   ← Selector shows 4-9
+         Easy                           Max
+```
+
+**Features:**
+- Current RPE display with emoji and description
+- Circular -, + buttons navigate full 1-10 range
+- Preset selector buttons show common range 4-9
+- Color-coded by difficulty:
+  - Green (1-6): Easy to Moderate
+  - Secondary (7): Challenging
+  - Orange (8): Hard
+  - Red (9-10): Very Hard to Maximum
+- RPE descriptions and emojis for all values 1-10
+- Haptic feedback on all interactions
+
+**RPE Scale:**
+| RPE | Emoji | Description |
+|-----|-------|-------------|
+| 1   | 😴    | Very Light  |
+| 2   | 😌    | Light       |
+| 3   | 🙂    | Light+      |
+| 4   | 😊    | Fairly Light|
+| 5   | 😊    | Easy        |
+| 6   | 🙂    | Moderate    |
+| 7   | 😐    | Challenging |
+| 8   | 😤    | Hard        |
+| 9   | 😰    | Very Hard   |
+| 10  | 💀    | Maximum     |
+
+#### 5.0.4 Session Sets History
+
+**File:** `lib/features/active_session/presentation/screens/active_session_screen.dart`
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│ 📜 Session History                         3 sets   │
+├─────────────────────────────────────────────────────┤
+│  #  │ Exercise        │ Weight │ Reps │ RPE        │
+├─────────────────────────────────────────────────────┤
+│ (1) │ Bench Press     │   60   │  12  │  7         │
+│ (2) │ Squat           │   80   │   8  │  8         │
+│ (3) │ Bench Press     │   65   │  10  │  8         │
+└─────────────────────────────────────────────────────┘
+
+                    Current Exercise
+                    ────────────────
+```
+
+**Features:**
+- Unified history of ALL sets across ALL exercises
+- Displayed above the current exercise name
+- Sets ordered by completion timestamp (`completedAt`)
+- Shows: set number, exercise name, weight, reps, RPE
+- Warmup sets show "W" with blue highlight
+- PR sets show gold/warning highlight
+- RPE color-coded by difficulty
+- Header shows total set count
+- Hidden when no sets logged yet
+- Maintains chronological order even when exercises are swapped mid-session
+
+#### 5.0.5 Set Completion Flow
+
+When trainer taps "Set complete":
+1. **Scroll to top** - Smooth animation (300ms) to top of screen
+2. **Start rest timer** - Automatic countdown begins
+3. **Show rest overlay** - Bottom sheet with timer controls
 
 ### 5.1 Voice Input Implementation
 

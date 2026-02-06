@@ -12,8 +12,7 @@ class SessionExerciseEntity {
   final DateTime? startedAt;
   final DateTime? completedAt;
 
-  // Target values from program exercise (AI recommendations)
-  final String? programExerciseId;
+  // Target values from AI recommendations
   final int? targetSets;
   final String? targetReps; // Can be "8-12" range format
   final double? targetWeight;
@@ -29,7 +28,6 @@ class SessionExerciseEntity {
     this.notes,
     this.startedAt,
     this.completedAt,
-    this.programExerciseId,
     this.targetSets,
     this.targetReps,
     this.targetWeight,
@@ -47,9 +45,16 @@ class SessionExerciseEntity {
 
   /// Get top set (heaviest weight with reps)
   ExerciseSetEntity? get topSet {
-    final workingSets = sets.where((s) => !s.isWarmup && s.weight != null);
+    final workingSets = sets.where((s) => !s.isWarmup && s.weight != null).toList();
     if (workingSets.isEmpty) return null;
-    return workingSets.reduce((a, b) => (a.weight ?? 0) > (b.weight ?? 0) ? a : b);
+    // Use fold instead of reduce to avoid type inference issues with subclasses
+    ExerciseSetEntity result = workingSets.first;
+    for (final set in workingSets.skip(1)) {
+      if ((set.weight ?? 0) > (result.weight ?? 0)) {
+        result = set;
+      }
+    }
+    return result;
   }
 
   /// Get average RPE across all sets
@@ -75,7 +80,6 @@ class SessionExerciseEntity {
     String? notes,
     DateTime? startedAt,
     DateTime? completedAt,
-    String? programExerciseId,
     int? targetSets,
     String? targetReps,
     double? targetWeight,
@@ -91,7 +95,6 @@ class SessionExerciseEntity {
       notes: notes ?? this.notes,
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,
-      programExerciseId: programExerciseId ?? this.programExerciseId,
       targetSets: targetSets ?? this.targetSets,
       targetReps: targetReps ?? this.targetReps,
       targetWeight: targetWeight ?? this.targetWeight,
@@ -103,16 +106,15 @@ class SessionExerciseEntity {
   /// Get recommended weight (from target or last set)
   double get recommendedWeight => targetWeight ?? 20.0;
 
-  /// Get recommended reps (parses the middle of range or uses default)
+  /// Get recommended reps (uses max of range for initial value)
   int get recommendedReps {
     if (targetReps == null) return 10;
-    // Handle range format like "8-12"
+    // Handle range format like "8-12" - use max value
     if (targetReps!.contains('-')) {
       final parts = targetReps!.split('-');
       if (parts.length == 2) {
-        final min = int.tryParse(parts[0].trim()) ?? 10;
         final max = int.tryParse(parts[1].trim()) ?? 10;
-        return ((min + max) / 2).round();
+        return max;
       }
     }
     return int.tryParse(targetReps!) ?? 10;

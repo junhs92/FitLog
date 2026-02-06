@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
+import '../../../../navigation/routes.dart';
 import '../../../../shared/widgets/buttons/primary_button.dart';
+import '../../../muscle_map/muscle_map.dart';
+import '../../../muscle_map/presentation/providers/muscle_activity_provider.dart';
 import '../../domain/entities/exercise_set_entity.dart';
 import '../../domain/entities/session_entity.dart';
 import '../providers/session_provider.dart';
 import '../widgets/set_row.dart';
+import '../widgets/achievement_card.dart';
 
 /// Session summary screen displayed after completing a session
 class SessionSummaryScreen extends ConsumerStatefulWidget {
@@ -122,6 +126,11 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
+            // Achievements section
+            _buildAchievementsSection(),
+            // Muscle body map
+            _buildMuscleBodyMap(),
+            const SizedBox(height: AppSpacing.lg),
             // Stats cards
             Row(
               children: [
@@ -138,7 +147,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                   child: _StatCard(
                     icon: Icons.fitness_center,
                     label: 'Exercises',
-                    value: _session!.exerciseCount.toString(),
+                    value: _session!.exercises.where((e) => e.sets.isNotEmpty).length.toString(),
                     color: AppColors.secondary,
                   ),
                 ),
@@ -207,7 +216,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            ..._session!.exercises.map((exercise) => _ExerciseSummaryCard(
+            ..._session!.exercises.where((e) => e.sets.isNotEmpty).map((exercise) => _ExerciseSummaryCard(
                   exerciseName: exercise.exercise.displayName,
                   sets: exercise.sets,
                   topSet: exercise.topSet,
@@ -229,13 +238,124 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
             const SizedBox(height: AppSpacing.md),
             PrimaryButton(
               label: 'Back to Home',
-              onPressed: () => context.go('/trainer/home'),
+              onPressed: () => context.go(Routes.trainerHome),
               icon: Icons.home,
             ),
             const SizedBox(height: AppSpacing.md),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAchievementsSection() {
+    return Consumer(
+      builder: (context, ref, child) {
+        final achievementsAsync = ref.watch(
+          sessionAchievementsProvider(widget.sessionId),
+        );
+        return achievementsAsync.when(
+          data: (achievements) {
+            if (achievements.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+              child: AchievementSection(achievements: achievements),
+            );
+          },
+          loading: () => const SizedBox.shrink(),
+          error: (_, __) => const SizedBox.shrink(),
+        );
+      },
+    );
+  }
+
+  Widget _buildMuscleBodyMap() {
+    return Consumer(
+      builder: (context, ref, child) {
+        final sessionActivityAsync = ref.watch(
+          sessionMuscleActivityProvider(widget.sessionId),
+        );
+        return sessionActivityAsync.when(
+          data: (sessionActivity) {
+            if (sessionActivity.musclesWorked.isEmpty) {
+              return const SizedBox.shrink();
+            }
+
+            // Convert volume to intensity (0.0-1.0) for body map
+            final maxVolume = sessionActivity.muscleVolumes.values
+                .fold(0, (a, b) => a > b ? a : b);
+            final muscleIntensities = <MuscleGroup, double>{};
+            for (final group in sessionActivity.musclesWorked) {
+              final volume = sessionActivity.muscleVolumes[group] ?? 0;
+              muscleIntensities[group] = maxVolume > 0 ? volume / maxVolume : 0.0;
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      const Icon(Icons.accessibility_new, size: 20, color: AppColors.primary),
+                      const SizedBox(width: AppSpacing.sm),
+                      const Text(
+                        'Muscles Worked',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.neutralBlack,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${sessionActivity.musclesWorked.length} groups',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.neutral600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  // Visual body map
+                  Center(
+                    child: SvgBodyMap(
+                      intensities: muscleIntensities,
+                      height: 320,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  // Text summary below
+                  SessionMusclesSummary(sessionActivity: sessionActivity),
+                ],
+              ),
+            );
+          },
+          loading: () => Container(
+            height: 200,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+          error: (_, __) => const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

@@ -9,11 +9,13 @@ class SetTagSelector extends StatelessWidget {
   final List<SetTag> selectedTags;
   final ValueChanged<List<SetTag>> onChanged;
   final List<SetTag>? availableTags;
+  final bool compact;
 
   const SetTagSelector({
     required this.selectedTags,
     required this.onChanged,
     this.availableTags,
+    this.compact = false,
     super.key,
   });
 
@@ -26,7 +28,15 @@ class SetTagSelector extends StatelessWidget {
     SetTag.pain,
   ];
 
-  List<SetTag> get _tags => availableTags ?? _defaultTags;
+  static const List<SetTag> _compactTags = [
+    SetTag.pr,
+    SetTag.warmup,
+    SetTag.fatigue,
+    SetTag.pain,
+  ];
+
+  List<SetTag> get _tags =>
+      availableTags ?? (compact ? _compactTags : _defaultTags);
 
   void _toggleTag(SetTag tag) {
     HapticFeedback.lightImpact();
@@ -63,9 +73,9 @@ class SetTagSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      alignment: WrapAlignment.center,
+      spacing: compact ? 4 : AppSpacing.sm,
+      runSpacing: compact ? 4 : AppSpacing.sm,
+      alignment: compact ? WrapAlignment.start : WrapAlignment.center,
       children: _tags.map((tag) {
         final isSelected = selectedTags.contains(tag);
         return _TagChip(
@@ -73,6 +83,7 @@ class SetTagSelector extends StatelessWidget {
           isSelected: isSelected,
           color: _getTagColor(tag),
           onTap: () => _toggleTag(tag),
+          compact: compact,
         );
       }).toList(),
     );
@@ -84,16 +95,40 @@ class _TagChip extends StatelessWidget {
   final bool isSelected;
   final Color color;
   final VoidCallback onTap;
+  final bool compact;
 
   const _TagChip({
     required this.tag,
     required this.isSelected,
     required this.color,
     required this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      // Compact: emoji only with tooltip
+      return Tooltip(
+        message: tag.displayName,
+        child: Material(
+          color: isSelected ? color : color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              child: Text(
+                tag.emoji,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: isSelected ? color : color.withOpacity(0.1),
       borderRadius: BorderRadius.circular(AppSpacing.radiusFull),

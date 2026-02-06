@@ -52,4 +52,11 @@ abstract class ReportRepository {
     required String reportId,
     String? templateId,
   });
+
+  /// Generate shareable HTML report
+  /// Returns a map with 'htmlUrl' and 'htmlContent'
+  Future<Either<Failure, Map<String, String>>> generateHtmlReport({
+    required String reportId,
+    String? sessionId,
+  });
 }

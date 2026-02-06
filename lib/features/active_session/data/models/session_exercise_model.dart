@@ -15,7 +15,6 @@ class SessionExerciseModel extends SessionExerciseEntity {
     super.notes,
     super.startedAt,
     super.completedAt,
-    super.programExerciseId,
     super.targetSets,
     super.targetReps,
     super.targetWeight,
@@ -36,37 +35,28 @@ class SessionExerciseModel extends SessionExerciseEntity {
         id: json['exercise_id'] as String,
         name: json['exercise_name'] as String? ?? 'Unknown',
         category: 'compound',
-        movementPattern: 'isolation',
+        movementGroup: 'other',
       );
     }
 
-    // Parse sets if available
+    // Parse sets from set_records table (joined) or legacy JSONB
     final sessionExerciseId = json['id'] as String;
-    final setsData = json['sets'] ?? json['exercise_sets'] ?? <dynamic>[];
-    final List<ExerciseSetEntity> sets = (setsData as List<dynamic>).map((s) {
-      final setJson = Map<String, dynamic>.from(s as Map);
-      // Inject session_exercise_id if not present
-      setJson['session_exercise_id'] ??= sessionExerciseId;
-      return ExerciseSetModel.fromJson(setJson);
-    }).toList();
+    final setsData = json['set_records'] ?? json['sets'] ?? json['exercise_sets'] ?? <dynamic>[];
+    // Explicitly create List<ExerciseSetEntity> to avoid runtime type issues
+    final List<ExerciseSetEntity> sets = <ExerciseSetEntity>[
+      for (final s in setsData as List<dynamic>)
+        ExerciseSetModel.fromJson(
+          Map<String, dynamic>.from(s as Map)
+            ..['session_exercise_id'] ??= sessionExerciseId,
+        ),
+    ];
 
-    // Parse target values from program_exercises join
-    final programExercise = json['program_exercises'] as Map<String, dynamic>?;
-    final String? programExerciseId = json['program_exercise_id'] as String?;
-
-    int? targetSets;
-    String? targetReps;
-    double? targetWeight;
-    int? targetRpe;
-    int? restSeconds;
-
-    if (programExercise != null) {
-      targetSets = programExercise['target_sets'] as int?;
-      targetReps = programExercise['target_reps'] as String?;
-      targetWeight = (programExercise['target_weight'] as num?)?.toDouble();
-      targetRpe = programExercise['target_rpe'] as int?;
-      restSeconds = programExercise['rest_seconds'] as int?;
-    }
+    // Parse target values (from AI recommendations stored directly)
+    final int? targetSets = json['target_sets'] as int?;
+    final String? targetReps = json['target_reps'] as String?;
+    final double? targetWeight = (json['target_weight'] as num?)?.toDouble();
+    final int? targetRpe = json['target_rpe'] as int?;
+    final int? restSeconds = json['rest_seconds'] as int?;
 
     return SessionExerciseModel(
       id: json['id'] as String,
@@ -81,7 +71,6 @@ class SessionExerciseModel extends SessionExerciseEntity {
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'] as String)
           : null,
-      programExerciseId: programExerciseId,
       targetSets: targetSets,
       targetReps: targetReps,
       targetWeight: targetWeight,
@@ -122,7 +111,6 @@ class SessionExerciseModel extends SessionExerciseEntity {
       notes: entity.notes,
       startedAt: entity.startedAt,
       completedAt: entity.completedAt,
-      programExerciseId: entity.programExerciseId,
       targetSets: entity.targetSets,
       targetReps: entity.targetReps,
       targetWeight: entity.targetWeight,

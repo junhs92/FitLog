@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
+import '../../../../shared/widgets/common/exercise_gif_image.dart';
 import '../../domain/entities/exercise_entity.dart';
 
 /// Exercise card for quick selection
@@ -20,28 +21,20 @@ class ExerciseCard extends StatelessWidget {
     super.key,
   });
 
-  IconData _getMovementPatternIcon() {
-    switch (exercise.movementPattern) {
-      case MovementPattern.squat:
-        return Icons.accessibility_new;
-      case MovementPattern.hinge:
-        return Icons.fitness_center;
-      case MovementPattern.horizontalPush:
+  IconData _getMovementGroupIcon() {
+    switch (exercise.movementGroup) {
+      case MovementGroup.push:
         return Icons.arrow_forward;
-      case MovementPattern.horizontalPull:
+      case MovementGroup.pull:
         return Icons.arrow_back;
-      case MovementPattern.verticalPush:
-        return Icons.arrow_upward;
-      case MovementPattern.verticalPull:
-        return Icons.arrow_downward;
-      case MovementPattern.carry:
-        return Icons.shopping_bag;
-      case MovementPattern.rotation:
-        return Icons.rotate_right;
-      case MovementPattern.cardio:
-        return Icons.directions_run;
-      default:
+      case MovementGroup.legs:
+        return Icons.accessibility_new;
+      case MovementGroup.core:
         return Icons.sports_gymnastics;
+      case MovementGroup.other:
+        return Icons.fitness_center;
+      default:
+        return Icons.fitness_center;
     }
   }
 
@@ -65,22 +58,27 @@ class ExerciseCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? AppColors.primary
-                      : AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                ),
-                child: Icon(
-                  _getMovementPatternIcon(),
-                  color: isSelected ? AppColors.neutralWhite : AppColors.primary,
-                  size: 24,
-                ),
-              ),
+              // GIF Thumbnail or fallback icon
+              exercise.hasGif
+                  ? ExerciseGifThumbnail(
+                      imageUrl: exercise.imageUrl,
+                      size: 48,
+                    )
+                  : Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                      ),
+                      child: Icon(
+                        _getMovementGroupIcon(),
+                        color: isSelected ? AppColors.neutralWhite : AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
               const SizedBox(width: AppSpacing.md),
               // Content
               Expanded(
@@ -99,7 +97,7 @@ class ExerciseCard extends StatelessWidget {
                     Row(
                       children: [
                         Text(
-                          MovementPattern.getDisplayName(exercise.movementPattern),
+                          MovementGroup.getDisplayName(exercise.movementGroup),
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.neutral700,
@@ -175,19 +173,24 @@ class ExerciseCardCompact extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.fitness_center,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-              ),
+              exercise.hasGif
+                  ? ExerciseGifThumbnail(
+                      imageUrl: exercise.imageUrl,
+                      size: 40,
+                    )
+                  : Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.fitness_center,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                    ),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 exercise.displayName,

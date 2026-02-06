@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 
 /// Entity for trainer message
 class TrainerMessage {
@@ -94,7 +95,7 @@ final upcomingSessionsProvider =
   final supabase = Supabase.instance.client;
 
   try {
-    final now = DateTime.now().toIso8601String();
+    final now = nowLocalIso8601();
     final response = await supabase
         .from('sessions')
         .select('''

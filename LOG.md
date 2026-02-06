@@ -4,6 +4,205 @@
 
 ---
 
+## 2026-01-25
+
+### Bodyweight & Isometric Exercise Support (맨몸/등척성 운동 지원)
+
+#### 개요
+맨몸 운동(Push-up, Pull-up)과 등척성 운동(Plank, Wall Sit)을 위한 전용 기능 추가
+
+#### 새로운 기능
+
+1. **등척성 운동 타이머 모드**
+   - Plank, Wall Sit 등 시간 기반 운동을 위한 카운트다운 타이머
+   - 프리셋 버튼: 15초, 30초, 45초, 60초, 90초, 120초
+   - 원형 진행 표시 (녹색→노란색→빨간색 색상 변화)
+   - 시작/일시정지/리셋 컨트롤
+   - 타이머 완료 시 햅틱 피드백
+
+2. **Reps/Timer 토글**
+   - 모든 운동에서 Reps 모드와 Timer 모드 간 전환 가능
+   - 등척성 운동은 기본적으로 Timer 모드로 시작
+   - 일반 운동은 기본적으로 Reps 모드로 시작
+
+3. **맨몸 운동 Weight 처리**
+   - 맨몸 운동(equipment = 'bodyweight') 시 Weight 기본값 0
+   - "(optional)" 라벨 표시
+   - Weight 입력 필드 60% 투명도로 de-emphasized
+
+4. **세트 기록 표시 개선**
+   - Duration이 있는 세트는 "Time" 열에 시간 표시 (예: "0:30")
+   - Reps가 있는 세트는 기존처럼 "Reps" 열에 표시
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `supabase/migrations/20260125_add_exercise_type.sql` | 신규 - is_isometric, default_duration_seconds 컬럼 추가 |
+| `domain/entities/exercise_entity.dart` | isIsometric, defaultDurationSeconds 필드 및 isBodyweight getter 추가 |
+| `data/models/exercise_model.dart` | 새 필드 파싱 (fromJson, toJson, fromEntity) |
+| `presentation/providers/session_provider.dart` | 타이머 상태 및 메서드 추가, logSet 업데이트 |
+| `presentation/widgets/countdown_timer.dart` | 신규 - 카운트다운 타이머 위젯 |
+| `presentation/widgets/set_row.dart` | Duration 표시 조건부 렌더링 |
+| `presentation/screens/active_session_screen.dart` | Reps/Timer 토글 및 조건부 UI |
+
+#### 데이터베이스 변경
+```sql
+-- 새 컬럼
+ALTER TABLE exercises
+ADD COLUMN is_isometric BOOLEAN DEFAULT false,
+ADD COLUMN default_duration_seconds INTEGER DEFAULT 30;
+
+-- 등척성 운동 플래그 설정
+UPDATE exercises SET is_isometric = true, default_duration_seconds = 30
+WHERE name ILIKE '%plank%';
+-- (wall sit, hollow hold, l-sit 등도 설정)
+```
+
+#### 상태 관리 추가
+```dart
+// ActiveSessionState에 추가된 필드
+final bool isTimerMode;
+final Duration currentDuration;
+final Duration countdownRemaining;
+final bool isCountdownRunning;
+
+// ActiveSessionNotifier에 추가된 메서드
+void toggleTimerMode();
+void setDuration(Duration duration);
+void startCountdown();
+void pauseCountdown();
+void resetCountdown();
+void updateCountdownRemaining(Duration remaining);
+```
+
+**상세 문서**: `claudedocs/2026-01-25_bodyweight_isometric_exercise_support.md`
+
+---
+
+### ExerciseDB Integration & Video/GIF Support (운동 시연 미디어)
+
+#### 개요
+ExerciseDB API 연동을 통한 운동 GIF/비디오 표시 기능 추가
+
+#### 새로운 기능
+
+1. **Exercise GIF/Video Display**
+   - 운동 카드에 ExerciseDB CDN의 GIF 썸네일 표시
+   - 운동 탭 시 전체 화면 비디오 팝업
+
+2. **Image Proxy Edge Function**
+   - 웹 플랫폼 CORS 제한 우회를 위한 프록시 함수
+   - 허용 도메인: `cdn.exercisedb.dev`, `v2.exercisedb.io`
+   - 24시간 캐싱
+
+3. **Video Popup Modal**
+   - 운동명, 장비, 주동근/협응근 정보 표시
+   - 한국어 라벨 매핑 (덤벨, 바벨, 가슴, 등 등)
+   - 움직임 패턴 정보 표시
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `supabase/migrations/20260125_add_exercisedb_mapping.sql` | 신규 - exercisedb_id 컬럼 추가 |
+| `supabase/migrations/20260125_add_gif_url_column.sql` | 신규 - gif_url 컬럼 추가 |
+| `supabase/migrations/20260125_populate_exercisedb_thumbnails.sql` | 신규 - 썸네일 URL 데이터 채우기 |
+| `supabase/functions/image-proxy/index.ts` | 신규 - 이미지/비디오 프록시 Edge Function |
+| `lib/shared/widgets/common/exercise_gif_image.dart` | GIF 이미지 표시 위젯 (CORS 프록시 지원) |
+| `lib/shared/widgets/common/exercise_video_player.dart` | 신규 - 비디오 플레이어 위젯 |
+| `lib/shared/widgets/common/exercise_video_popup.dart` | 신규 - 비디오 팝업 모달 |
+| `domain/entities/exercise_entity.dart` | videoUrl, imageUrl 필드 추가 |
+| `data/models/exercise_model.dart` | 새 필드 파싱 |
+| `presentation/widgets/exercise_card.dart` | 운동 카드에 GIF 썸네일 표시 |
+| `scripts/map_exercisedb_ids.dart` | 신규 - ExerciseDB ID 매핑 스크립트 |
+| `scripts/populate_gif_urls.dart` | 신규 - GIF URL 채우기 스크립트 |
+
+#### 데이터베이스 변경
+```sql
+-- ExerciseDB ID 매핑
+ALTER TABLE exercises
+ADD COLUMN exercisedb_id VARCHAR(30);
+
+-- GIF URL 저장
+ALTER TABLE exercises
+ADD COLUMN gif_url TEXT;
+```
+
+#### Edge Function: image-proxy
+```typescript
+// 허용 도메인만 프록시
+const allowedDomains = [
+  'https://cdn.exercisedb.dev/',
+  'https://v2.exercisedb.io/',
+];
+
+// 24시간 캐싱
+'Cache-Control': 'public, max-age=86400'
+```
+
+---
+
+### Calendar No-Show Detection (노쇼 자동 감지)
+
+#### 개요
+예정된 세션 시간이 지났으나 시작되지 않은 일정을 자동으로 'no_show' 상태로 업데이트
+
+#### 새로운 기능
+
+1. **자동 노쇼 체크**
+   - 캘린더 화면 로드 시 자동 실행
+   - 30분 이상 지난 'scheduled' 상태 세션 감지
+   - 해당 세션들을 'no_show'로 일괄 업데이트
+
+2. **알림 스낵바**
+   - 노쇼 감지 시 사용자에게 알림 표시
+   - 예: "3 appointment(s) marked as no-show"
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `lib/features/calendar/domain/repositories/schedule_repository.dart` | `checkAndMarkNoShows()` 인터페이스 추가 |
+| `lib/features/calendar/data/repositories/schedule_repository_impl.dart` | 노쇼 체크 로직 구현 |
+| `lib/features/calendar/data/datasources/schedule_remote_datasource.dart` | DB 업데이트 쿼리 |
+| `lib/features/calendar/presentation/screens/calendar_screen.dart` | 화면 로드 시 노쇼 체크 호출 |
+
+#### 쿼리 로직
+```sql
+-- 30분 이상 지난 scheduled 세션 찾기 및 업데이트
+UPDATE schedule_entries
+SET status = 'no_show', updated_at = NOW()
+WHERE status = 'scheduled'
+  AND scheduled_at < NOW() - INTERVAL '30 minutes'
+RETURNING id;
+```
+
+---
+
+### Trainer Home & Dashboard Improvements (트레이너 홈 개선)
+
+#### 변경 사항
+
+1. **TodaySessionsCard**
+   - 오늘의 일정 미리보기 카드
+   - 완료/노쇼 상태 표시
+   - 최대 3개 세션 표시 + "View All" 버튼
+
+2. **Client Monitoring Screen 개선**
+   - 클라이언트별 모니터링 UI 업데이트
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `lib/features/trainer_home/presentation/widgets/today_sessions_card.dart` | 오늘 세션 카드 위젯 |
+| `lib/features/trainer_home/presentation/screens/trainer_home_screen.dart` | 대시보드 레이아웃 업데이트 |
+| `lib/features/trainer_home/presentation/screens/client_monitoring_screen.dart` | 클라이언트 모니터링 화면 |
+| `lib/features/trainer_home/presentation/providers/trainer_home_provider.dart` | 상태 관리 업데이트 |
+
+---
+
 ## 2026-01-23
 
 ### Alternative Exercise Feature (대체 운동 기능)
@@ -311,9 +510,11 @@ Client 선택  → 코드 없이 회원가입 진행
 - [x] 트레이너 홈 대시보드 (Phase 2)
 - [x] Supabase 연동 설정
 - [x] UI 디자인 벤치마크 문서
+- [x] Active Session 기능 (세션 로깅)
+- [x] 대체 운동 기능 (Alternative Exercise)
+- [x] 맨몸/등척성 운동 지원 (Bodyweight & Isometric)
 
 ### 진행 중
-- [ ] Active Session 기능
 - [ ] AI Workout 생성
 - [ ] Lifestyle Log 기능
 - [ ] AI Report 기능
@@ -344,4 +545,4 @@ Flutter는 `.env` 파일을 자동으로 읽지 않음. 반드시 `--dart-define
 
 ---
 
-*Last Updated: 2024-12-06*
+*Last Updated: 2026-01-25*

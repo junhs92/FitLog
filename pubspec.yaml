@@ -13,11 +13,14 @@ dependencies:
 
   # UI
   cupertino_icons: ^1.0.8
+  fl_chart: ^0.68.0
   google_fonts: ^6.1.0
   flutter_svg: ^2.0.9
   cached_network_image: ^3.3.1
   qr_flutter: ^4.1.0
   share_plus: ^10.0.0
+  flutter_markdown: ^0.7.4+3
+  table_calendar: ^3.1.2
 
   # State Management
   flutter_riverpod: ^2.4.10
@@ -41,6 +44,10 @@ dependencies:
   # Voice Input
   speech_to_text: ^7.0.0
   permission_handler: ^11.3.0
+
+  # Video Player
+  video_player: ^2.8.0
+
 
   # Utilities
   intl: ^0.19.0

@@ -1,8 +1,8 @@
 # FitLog - Technical Specification Document
 
-**Version:** 1.1  
-**Last Updated:** December 2024  
-**Status:** Draft  
+**Version:** 1.2
+**Last Updated:** December 2024
+**Status:** Draft
 **MVP Target:** Q1 2026
 
 ---
@@ -228,14 +228,17 @@ erDiagram
     USER ||--o| CLIENT_PROFILE : "has"
     TRAINER_PROFILE ||--o{ TRAINER_CLIENT : "manages"
     CLIENT_PROFILE ||--o{ TRAINER_CLIENT : "assigned to"
+    TRAINER_PROFILE ||--o{ WORKOUT_PROGRAM : "creates"
+    CLIENT_PROFILE ||--o{ WORKOUT_PROGRAM : "follows"
+    WORKOUT_PROGRAM ||--o{ SESSION : "generates"
     TRAINER_PROFILE ||--o{ SESSION : "conducts"
     CLIENT_PROFILE ||--o{ SESSION : "attends"
-    SESSION ||--o{ EXERCISE_LOG : "contains"
-    EXERCISE ||--o{ EXERCISE_LOG : "logged as"
+    SESSION ||--o{ SESSION_EXERCISE : "contains"
+    EXERCISE ||--o{ SESSION_EXERCISE : "logged as"
     CLIENT_PROFILE ||--o{ LIFESTYLE_LOG : "records"
     CLIENT_PROFILE ||--o{ BODY_PHOTO : "uploads"
     TRAINER_PROFILE ||--o{ ACADEMY_PROGRESS : "tracks"
-    
+
     USER {
         uuid id PK
         string email UK
@@ -246,7 +249,7 @@ erDiagram
         timestamp created_at
         timestamp updated_at
     }
-    
+
     TRAINER_PROFILE {
         uuid id PK
         uuid user_id FK
@@ -256,7 +259,7 @@ erDiagram
         text bio
         int active_client_count
     }
-    
+
     CLIENT_PROFILE {
         uuid id PK
         uuid user_id FK
@@ -268,11 +271,34 @@ erDiagram
         jsonb limitations
         enum fitness_level
     }
-    
+
+    WORKOUT_PROGRAM {
+        uuid id PK
+        uuid trainer_id FK
+        uuid client_id FK
+        string name
+        string training_split
+        jsonb focus_areas
+        jsonb constraints
+        jsonb ai_guidelines
+        int total_sessions
+        numeric avg_sessions_per_week
+        numeric consistency_score
+        string last_session_focus
+        jsonb muscle_group_history
+        timestamp expires_at
+        timestamp created_at
+    }
+
     SESSION {
         uuid id PK
         uuid trainer_id FK
         uuid client_id FK
+        uuid program_id FK
+        int session_number
+        string focus_area
+        int days_since_last
+        text ai_reasoning
         timestamp scheduled_at
         timestamp started_at
         timestamp ended_at
@@ -281,8 +307,8 @@ erDiagram
         text notes_ai_summary
         int feedback_rating
     }
-    
-    EXERCISE_LOG {
+
+    SESSION_EXERCISE {
         uuid id PK
         uuid session_id FK
         uuid exercise_id FK
@@ -291,7 +317,7 @@ erDiagram
         enum difficulty_feedback
         boolean was_swapped
     }
-    
+
     EXERCISE {
         uuid id PK
         string name_ko
@@ -303,7 +329,7 @@ erDiagram
         array contraindications
         vector embedding
     }
-    
+
     LIFESTYLE_LOG {
         uuid id PK
         uuid client_id FK
@@ -313,7 +339,7 @@ erDiagram
         string photo_url
         timestamp created_at
     }
-    
+
     BODY_PHOTO {
         uuid id PK
         uuid client_id FK
@@ -322,7 +348,7 @@ erDiagram
         date taken_at
         decimal weight_kg
     }
-    
+
     ACADEMY_PROGRESS {
         uuid id PK
         uuid trainer_id FK
@@ -372,13 +398,64 @@ erDiagram
 | limitations | JSONB | DEFAULT '[]' | Physical limitations |
 | fitness_level | VARCHAR(20) | DEFAULT 'beginner' | Experience level |
 
-#### 3.2.4 Training Session
+#### 3.2.4 Workout Program (Training Direction)
+
+The workout program represents a training **direction** rather than a detailed workout plan. Instead of pre-defining specific exercises for each day, the program provides guidance that the AI uses to dynamically generate appropriate exercises for each session.
+
+**Key Concept:** Programs are training strategies, not workout blueprints. The AI generates exercises per session based on:
+- Gap since last session (recovery time)
+- Client's workout frequency and consistency patterns
+- Recent muscle groups worked
+- Program's training split preference
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | UUID | PK, DEFAULT gen_random_uuid() | Program identifier |
+| trainer_id | UUID | FK→trainer_profiles | Program creator |
+| client_id | UUID | FK→client_profiles | Program owner |
+| name | VARCHAR(100) | NOT NULL | Program name |
+| training_split | VARCHAR(20) | DEFAULT 'full_body' | Split type: full_body, upper_lower, push_pull_legs, bro_split, custom |
+| focus_areas | JSONB | DEFAULT '[]' | Priority muscle groups or goals: ["chest", "back", "strength"] |
+| constraints | JSONB | DEFAULT '{}' | Client limitations: {"avoid_exercises": [], "max_duration_minutes": 60} |
+| ai_guidelines | JSONB | DEFAULT '{}' | AI memory: learned preferences, adjustments, notes |
+| total_sessions | INTEGER | DEFAULT 0 | Count of completed sessions in this program |
+| avg_sessions_per_week | NUMERIC(3,1) | DEFAULT 0 | Rolling average sessions per week |
+| consistency_score | NUMERIC(3,2) | DEFAULT 0 | Client consistency rating 0-1 |
+| last_session_focus | VARCHAR(50) | NULLABLE | Focus area of most recent session |
+| muscle_group_history | JSONB | DEFAULT '[]' | Recent muscle groups worked with dates |
+| expires_at | TIMESTAMPTZ | NULLABLE | Program expiration (default 3 months) |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Creation time |
+
+**Training Split Options:**
+- `full_body`: All major muscle groups each session (for 2-3x/week frequency)
+- `upper_lower`: Alternating upper/lower body (for 4x/week frequency)
+- `push_pull_legs`: Push/Pull/Legs rotation (for 3-6x/week frequency)
+- `bro_split`: Single muscle group focus per day (for 5-6x/week frequency)
+- `custom`: Trainer-defined custom split
+
+**AI Guidelines Schema:**
+```json
+{
+  "preferred_exercises": ["barbell_squat", "deadlift"],
+  "avoided_exercises": ["leg_press"],
+  "intensity_preference": "high",
+  "rest_time_seconds": 90,
+  "notes": ["Client prefers compound movements", "Shoulder injury - avoid overhead"]
+}
+```
+
+#### 3.2.5 Training Session
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | id | UUID | PK, DEFAULT gen_random_uuid() | Session identifier |
 | trainer_id | UUID | FK→trainer_profiles | Session trainer |
 | client_id | UUID | FK→client_profiles | Session client |
+| program_id | UUID | FK→workout_programs | Parent program |
+| session_number | INTEGER | NULLABLE | Sequential number within program |
+| focus_area | VARCHAR(50) | NULLABLE | Primary focus (chest, pull, legs, etc.) |
+| days_since_last | INTEGER | NULLABLE | Days gap from previous session |
+| ai_reasoning | TEXT | NULLABLE | AI explanation for exercise selection |
 | scheduled_at | TIMESTAMPTZ | NOT NULL | Scheduled time |
 | started_at | TIMESTAMPTZ | NULLABLE | Actual start |
 | ended_at | TIMESTAMPTZ | NULLABLE | Actual end |
@@ -387,7 +464,25 @@ erDiagram
 | notes_ai_summary | TEXT | NULLABLE | AI-generated summary |
 | feedback_rating | SMALLINT | CHECK (1-5) | Client rating |
 
-#### 3.2.5 Exercise Log
+**AI Session Generation Logic:**
+
+When generating a session, the AI considers:
+
+1. **Gap Analysis:** `days_since_last` determines recovery level
+   - 1-2 days: Light/recovery session or different muscle group
+   - 3-4 days: Normal intensity, smart split selection
+   - 5+ days: Full body or priority muscle groups
+
+2. **Split Determination:** Based on `training_split` and `muscle_group_history`
+   - For `push_pull_legs`: Check last focus, rotate to next in sequence
+   - For `upper_lower`: Alternate between upper and lower
+   - For `full_body`: Prioritize muscles not worked recently
+
+3. **Consistency Adaptation:** Based on `avg_sessions_per_week` and `consistency_score`
+   - Low consistency (< 2x/week): Prefer full body to maximize each session
+   - High consistency (4x+/week): Follow split strictly
+
+#### 3.2.6 Session Exercise
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
@@ -400,7 +495,22 @@ erDiagram
 | was_swapped | BOOLEAN | DEFAULT false | AI swap used |
 | original_exercise_id | UUID | NULLABLE | If swapped, original |
 
-#### 3.2.6 Lifestyle Log (FitLog Life)
+**Sets JSONB Schema:**
+```json
+[
+  {
+    "set_number": 1,
+    "weight": 60.0,
+    "reps": 10,
+    "rpe": 7,
+    "is_warmup": false,
+    "is_pr": false,
+    "tags": ["focused", "good_form"]
+  }
+]
+```
+
+#### 3.2.7 Lifestyle Log (FitLog Life)
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
@@ -420,7 +530,7 @@ erDiagram
 - **Activity:** `{ type: string, duration_min: number, intensity: 'low'|'medium'|'high' }`
 - **Mood:** `{ score: 1-5, note?: string }`
 
-#### 3.2.7 Exercise Library
+#### 3.2.8 Exercise Library
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
@@ -480,22 +590,62 @@ await supabase.storage
 
 ### 4.3 Edge Functions
 
-#### 4.3.1 generate-workout
+#### 4.3.1 generate-session
 
-Generate a personalized workout program using AI.
+Generate a personalized session dynamically using AI. This is the primary workout generation endpoint that creates exercises based on the client's program direction, recent history, and current state.
 
-**Endpoint:** `POST /functions/v1/generate-workout`
+**Endpoint:** `POST /functions/v1/generate-session`
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | clientId | UUID | Yes | Target client |
-| goal | string | Yes | Workout goal |
-| duration_weeks | integer | No | Program length (default: 4) |
-| sessions_per_week | integer | No | Frequency (default: 3) |
-| equipment | string[] | No | Available equipment |
-| excluded_exercises | UUID[] | No | Exercises to avoid |
+| programId | UUID | Yes | Associated program (training direction) |
+| trainerId | UUID | Yes | Session trainer |
 
-#### 4.3.2 swap-exercise
+**Response:**
+```json
+{
+  "session_id": "uuid",
+  "focus_area": "push",
+  "days_since_last": 3,
+  "ai_reasoning": "Based on your 3-day gap and recent leg focus, today is a push day focusing on chest and shoulders.",
+  "exercises": [
+    {
+      "exercise_id": "uuid",
+      "name": "Barbell Bench Press",
+      "target_sets": 4,
+      "target_reps": "8-10",
+      "target_weight": 60.0,
+      "rest_seconds": 90
+    }
+  ]
+}
+```
+
+**AI Decision Factors:**
+1. `days_since_last`: Gap since last session (recovery consideration)
+2. `muscle_group_history`: Recent muscle groups worked
+3. `training_split`: Program's preferred split pattern
+4. `consistency_score`: Client's training consistency
+5. `ai_guidelines`: Trainer's custom preferences stored in program
+
+#### 4.3.2 create-program
+
+Create a new training program (direction) for a client.
+
+**Endpoint:** `POST /functions/v1/create-program`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| clientId | UUID | Yes | Target client |
+| trainerId | UUID | Yes | Program creator |
+| name | string | Yes | Program name |
+| training_split | string | No | Split type (default: 'full_body') |
+| focus_areas | string[] | No | Priority muscle groups |
+| constraints | object | No | Client limitations |
+| duration_months | integer | No | Program duration (default: 3) |
+
+#### 4.3.3 swap-exercise
 
 Get alternative exercises with AI reasoning.
 
@@ -508,7 +658,7 @@ Get alternative exercises with AI reasoning.
 | clientId | UUID | Yes | For personalization |
 | preservePattern | boolean | No | Keep movement pattern (default: true) |
 
-#### 4.3.3 session-summary
+#### 4.3.4 session-summary
 
 Generate AI summary of training session.
 

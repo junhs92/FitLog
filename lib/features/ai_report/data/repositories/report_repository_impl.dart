@@ -147,4 +147,20 @@ class ReportRepositoryImpl implements ReportRepository {
       return Left(ServerFailure(message: e.toString()));
     }
   }
+
+  @override
+  Future<Either<Failure, Map<String, String>>> generateHtmlReport({
+    required String reportId,
+    String? sessionId,
+  }) async {
+    try {
+      final result = await _remoteDataSource.generateHtmlReport(
+        reportId: reportId,
+        sessionId: sessionId,
+      );
+      return Right(result);
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
 }

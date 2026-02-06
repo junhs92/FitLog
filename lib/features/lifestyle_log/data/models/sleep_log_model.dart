@@ -27,7 +27,7 @@ class SleepLogModel extends SleepLogEntity {
           ? DateTime.parse(json['wake_time'] as String)
           : null,
       quality: json['quality'] != null
-          ? _qualityFromString(json['quality'] as String)
+          ? _qualityFromInt(json['quality'] as int)
           : null,
       notes: json['notes'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -45,7 +45,7 @@ class SleepLogModel extends SleepLogEntity {
       'log_date': logDate.toIso8601String().split('T')[0],
       'bedtime': bedtime?.toIso8601String(),
       'wake_time': wakeTime?.toIso8601String(),
-      'quality': quality != null ? _qualityToString(quality!) : null,
+      'quality': quality != null ? _qualityToInt(quality!) : null,
       'notes': notes,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
@@ -67,31 +67,33 @@ class SleepLogModel extends SleepLogEntity {
     );
   }
 
-  static SleepQuality _qualityFromString(String value) {
+  /// Convert integer (1-4) to SleepQuality enum
+  static SleepQuality _qualityFromInt(int value) {
     switch (value) {
-      case 'poor':
+      case 1:
         return SleepQuality.poor;
-      case 'fair':
+      case 2:
         return SleepQuality.fair;
-      case 'good':
+      case 3:
         return SleepQuality.good;
-      case 'excellent':
+      case 4:
         return SleepQuality.excellent;
       default:
         return SleepQuality.fair;
     }
   }
 
-  static String _qualityToString(SleepQuality quality) {
+  /// Convert SleepQuality enum to integer (1-4)
+  static int _qualityToInt(SleepQuality quality) {
     switch (quality) {
       case SleepQuality.poor:
-        return 'poor';
+        return 1;
       case SleepQuality.fair:
-        return 'fair';
+        return 2;
       case SleepQuality.good:
-        return 'good';
+        return 3;
       case SleepQuality.excellent:
-        return 'excellent';
+        return 4;
     }
   }
 }

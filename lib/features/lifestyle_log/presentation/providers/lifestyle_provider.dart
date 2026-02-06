@@ -3,6 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../data/datasources/lifestyle_remote_datasource.dart';
 import '../../data/repositories/lifestyle_repository_impl.dart';
 import '../../domain/entities/daily_log_entity.dart';
+import '../../domain/entities/exercise_stats_entity.dart';
+import '../../domain/entities/exercise_volume_history_entity.dart';
+import '../../domain/entities/lifestyle_summary_entity.dart';
 import '../../domain/entities/meal_log_entity.dart';
 import '../../domain/entities/water_log_entity.dart';
 import '../../domain/entities/sleep_log_entity.dart';
@@ -346,5 +349,149 @@ final weightHistoryProvider = FutureProvider.family<
       toDate: params.toDate,
     );
     return result.fold((_) => [], (history) => history);
+  },
+);
+
+/// Provider for 7-day lifestyle summary
+/// Used in Flow 0 (Pre-Session) to show trainer the client's recent status
+final clientLifestyleSummaryProvider =
+    FutureProvider.family<LifestyleSummaryEntity?, String>(
+  (ref, clientId) async {
+    final repository = ref.read(lifestyleRepositoryProvider);
+    final result = await repository.get7DayLifestyleSummary(clientId: clientId);
+    return result.fold((_) => null, (summary) => summary);
+  },
+);
+
+/// Combined 7-day lifestyle logs for detailed view
+/// Returns all raw logs for sleep, mood, meals, water, and activity
+class Client7DayLifestyleLogs {
+  final String clientId;
+  final DateTime fromDate;
+  final DateTime toDate;
+  final List<SleepLogEntity> sleepLogs;
+  final List<MoodLogEntity> moodLogs;
+  final List<MealLogEntity> mealLogs;
+  final List<DailyWaterSummary> waterLogs;
+  final List<({DateTime date, int? steps, int? activeMinutes})> activityLogs;
+
+  const Client7DayLifestyleLogs({
+    required this.clientId,
+    required this.fromDate,
+    required this.toDate,
+    required this.sleepLogs,
+    required this.moodLogs,
+    required this.mealLogs,
+    required this.waterLogs,
+    required this.activityLogs,
+  });
+
+  bool get hasData =>
+      sleepLogs.isNotEmpty ||
+      moodLogs.isNotEmpty ||
+      mealLogs.isNotEmpty ||
+      waterLogs.isNotEmpty ||
+      activityLogs.isNotEmpty;
+}
+
+/// Provider for detailed 7-day lifestyle logs
+/// Used in lifestyle detail screen to show all records
+final client7DayLifestyleLogsProvider =
+    FutureProvider.family<Client7DayLifestyleLogs, String>(
+  (ref, clientId) async {
+    final repository = ref.read(lifestyleRepositoryProvider);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final fromDate = today.subtract(const Duration(days: 6));
+    final toDate = today;
+
+    // Fetch daily logs which contain all data including meals
+    final dailyLogsResult = await repository.getDailyLogs(
+      clientId: clientId,
+      fromDate: fromDate,
+      toDate: toDate,
+    );
+
+    // Also fetch specific history for complete data
+    final results = await Future.wait([
+      repository.getSleepHistory(
+        clientId: clientId,
+        fromDate: fromDate,
+        toDate: toDate,
+      ),
+      repository.getMoodHistory(
+        clientId: clientId,
+        fromDate: fromDate,
+        toDate: toDate,
+      ),
+      repository.getWaterHistory(
+        clientId: clientId,
+        fromDate: fromDate,
+        toDate: toDate,
+      ),
+      repository.getActivityHistory(
+        clientId: clientId,
+        fromDate: fromDate,
+        toDate: toDate,
+      ),
+    ]);
+
+    // Extract meals from daily logs
+    final mealLogs = dailyLogsResult.fold(
+      (_) => <MealLogEntity>[],
+      (dailyLogs) => dailyLogs.expand((log) => log.meals).toList(),
+    );
+
+    return Client7DayLifestyleLogs(
+      clientId: clientId,
+      fromDate: fromDate,
+      toDate: toDate,
+      sleepLogs: results[0].fold((_) => [], (data) => data as List<SleepLogEntity>),
+      moodLogs: results[1].fold((_) => [], (data) => data as List<MoodLogEntity>),
+      mealLogs: mealLogs,
+      waterLogs: results[2].fold((_) => [], (data) => data as List<DailyWaterSummary>),
+      activityLogs: results[3].fold(
+        (_) => [],
+        (data) => data as List<({DateTime date, int? steps, int? activeMinutes})>,
+      ),
+    );
+  },
+);
+
+/// Provider for exercise statistics
+/// Shows aggregated stats for each exercise the client has performed
+final exerciseStatsProvider = FutureProvider.family<
+    List<ExerciseStatsEntity>,
+    ({String clientId, int? dayRange})>(
+  (ref, params) async {
+    final repository = ref.read(lifestyleRepositoryProvider);
+    final result = await repository.getExerciseStats(
+      clientId: params.clientId,
+      dayRange: params.dayRange,
+    );
+    return result.fold((_) => [], (stats) => stats);
+  },
+);
+
+/// Provider for exercise volume history
+/// Shows volume progression per session for charting
+final exerciseVolumeHistoryProvider = FutureProvider.family<
+    ExerciseVolumeHistoryEntity,
+    ({String clientId, String exerciseId})>(
+  (ref, params) async {
+    final repository = ref.read(lifestyleRepositoryProvider);
+    final result = await repository.getExerciseVolumeHistory(
+      clientId: params.clientId,
+      exerciseId: params.exerciseId,
+    );
+    return result.fold(
+      (_) => ExerciseVolumeHistoryEntity(
+        exerciseId: params.exerciseId,
+        exerciseName: '',
+        exerciseNameKo: '',
+        sessions: const [],
+      ),
+      (history) => history,
+    );
   },
 );

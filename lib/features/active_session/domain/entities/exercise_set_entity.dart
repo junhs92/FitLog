@@ -10,6 +10,51 @@ enum SetTag {
   failureSet,
 }
 
+/// PR type for tracking different types of personal records
+enum PrType {
+  weight,
+  volume,
+  reps,
+}
+
+extension PrTypeExtension on PrType {
+  String get displayName {
+    switch (this) {
+      case PrType.weight:
+        return 'Weight PR';
+      case PrType.volume:
+        return 'Volume PR';
+      case PrType.reps:
+        return 'Reps PR';
+    }
+  }
+
+  String get id {
+    switch (this) {
+      case PrType.weight:
+        return 'weight';
+      case PrType.volume:
+        return 'volume';
+      case PrType.reps:
+        return 'reps';
+    }
+  }
+
+  static PrType? fromString(String? value) {
+    if (value == null) return null;
+    switch (value) {
+      case 'weight':
+        return PrType.weight;
+      case 'volume':
+        return PrType.volume;
+      case 'reps':
+        return PrType.reps;
+      default:
+        return null;
+    }
+  }
+}
+
 extension SetTagExtension on SetTag {
   String get displayName {
     switch (this) {
@@ -65,8 +110,11 @@ class ExerciseSetEntity {
   final Duration? duration;
   final double? distance;
   final List<SetTag> tags;
+  final PrType? prType;
   final String? notes;
   final DateTime completedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   const ExerciseSetEntity({
     required this.id,
@@ -78,8 +126,11 @@ class ExerciseSetEntity {
     this.duration,
     this.distance,
     this.tags = const [],
+    this.prType,
     this.notes,
     required this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   /// Calculate estimated 1RM using Epley formula
@@ -117,8 +168,11 @@ class ExerciseSetEntity {
     Duration? duration,
     double? distance,
     List<SetTag>? tags,
+    PrType? prType,
     String? notes,
     DateTime? completedAt,
+    DateTime? createdAt,
+    DateTime? updatedAt,
   }) {
     return ExerciseSetEntity(
       id: id ?? this.id,
@@ -130,8 +184,11 @@ class ExerciseSetEntity {
       duration: duration ?? this.duration,
       distance: distance ?? this.distance,
       tags: tags ?? this.tags,
+      prType: prType ?? this.prType,
       notes: notes ?? this.notes,
       completedAt: completedAt ?? this.completedAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 

@@ -2,31 +2,36 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
+import '../../../active_session/domain/entities/session_exercise_entity.dart';
 import '../../domain/entities/workout_program.dart';
 import '../../domain/entities/ai_reasoning.dart';
-import '../../domain/entities/exercise_difficulty.dart';
+import '../../domain/entities/session_feedback.dart';
 import '../providers/ai_workout_provider.dart';
 
-/// Bottom sheet for exercise swap with alternatives
+/// Bottom sheet for exercise swap with alternatives during a session
+/// Uses session-level alternatives instead of deprecated program-level alternatives
 class ExerciseSwapSheet extends ConsumerStatefulWidget {
-  final ProgramExerciseEntity exercise;
+  final SessionExerciseEntity sessionExercise;
   final String clientId;
   final TrainingGoal goal;
+  final DifficultyFeedback? initialFeedback;
   final Function(String exerciseId, String? reason)? onSwap;
 
   const ExerciseSwapSheet({
-    required this.exercise,
+    required this.sessionExercise,
     required this.clientId,
     required this.goal,
+    this.initialFeedback,
     this.onSwap,
     super.key,
   });
 
   static Future<void> show({
     required BuildContext context,
-    required ProgramExerciseEntity exercise,
+    required SessionExerciseEntity sessionExercise,
     required String clientId,
     required TrainingGoal goal,
+    DifficultyFeedback? initialFeedback,
     Function(String exerciseId, String? reason)? onSwap,
   }) {
     return showModalBottomSheet(
@@ -34,9 +39,10 @@ class ExerciseSwapSheet extends ConsumerStatefulWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => ExerciseSwapSheet(
-        exercise: exercise,
+        sessionExercise: sessionExercise,
         clientId: clientId,
         goal: goal,
+        initialFeedback: initialFeedback,
         onSwap: onSwap,
       ),
     );
@@ -48,18 +54,36 @@ class ExerciseSwapSheet extends ConsumerStatefulWidget {
 
 class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
   String? _selectedAlternativeId;
+  DifficultyFeedback? _selectedFeedback;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedFeedback = widget.initialFeedback;
+
+    // If initial feedback is provided, load alternatives
+    if (widget.initialFeedback != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadAlternatives(widget.initialFeedback!);
+      });
+    }
+  }
+
+  void _loadAlternatives(DifficultyFeedback feedback) {
+    final exerciseId = widget.sessionExercise.exercise.id;
+    ref.read(sessionFeedbackProvider(exerciseId).notifier).recordFeedback(
+      sessionExerciseId: widget.sessionExercise.id,
+      exerciseId: exerciseId,
+      clientId: widget.clientId,
+      feedback: feedback,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final alternativesAsync = ref.watch(exerciseAlternativesProvider((
-      exerciseId: widget.exercise.exerciseId,
-      clientId: widget.clientId,
-      feedback: null,
-    )));
-
-    // Use the already-loaded reasoning from the exercise entity
-    // instead of fetching from provider (which queries wrong table)
-    final reasoning = widget.exercise.aiReasoning;
+    final exerciseId = widget.sessionExercise.exercise.id;
+    final feedbackState = ref.watch(sessionFeedbackProvider(exerciseId));
+    final exerciseName = widget.sessionExercise.exercise.displayName;
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
@@ -101,7 +125,7 @@ class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        widget.exercise.displayName,
+                        exerciseName,
                         style: const TextStyle(
                           fontSize: 14,
                           color: AppColors.neutral700,
@@ -125,9 +149,9 @@ class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // AI Reasoning Section
+                  // Difficulty Feedback Section
                   const Text(
-                    'AI 선택 이유',
+                    '현재 난이도',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -135,19 +159,25 @@ class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  _buildReasoningSection(reasoning),
+                  _buildFeedbackButtons(),
                   const SizedBox(height: AppSpacing.lg),
+
                   // Alternatives Section
-                  const Text(
-                    '대안 운동',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                  if (_selectedFeedback != null &&
+                      _selectedFeedback != DifficultyFeedback.justRight) ...[
+                    const Text(
+                      '대안 운동',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.neutralBlack,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _buildAlternativesSection(alternativesAsync),
+                    const SizedBox(height: AppSpacing.sm),
+                    _buildAlternativesSection(feedbackState),
+                  ] else if (_selectedFeedback == DifficultyFeedback.justRight) ...[
+                    _buildJustRightMessage(),
+                  ],
                 ],
               ),
             ),
@@ -192,8 +222,137 @@ class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
     );
   }
 
-  Widget _buildReasoningSection(AIExerciseReasoning? reasoning) {
-    if (reasoning == null) {
+  Widget _buildFeedbackButtons() {
+    return Row(
+      children: DifficultyFeedback.values.map((feedback) {
+        final isSelected = _selectedFeedback == feedback;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: feedback != DifficultyFeedback.values.last ? 8 : 0,
+            ),
+            child: Material(
+              color: isSelected
+                  ? _getFeedbackColor(feedback).withValues(alpha: 0.2)
+                  : AppColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedFeedback = feedback;
+                    _selectedAlternativeId = null;
+                  });
+                  _loadAlternatives(feedback);
+                },
+                borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppSpacing.md,
+                    horizontal: AppSpacing.sm,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: isSelected
+                          ? _getFeedbackColor(feedback)
+                          : AppColors.neutral200,
+                      width: isSelected ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        feedback.emoji,
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        feedback.displayName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          color: isSelected
+                              ? _getFeedbackColor(feedback)
+                              : AppColors.neutral700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Color _getFeedbackColor(DifficultyFeedback feedback) {
+    switch (feedback) {
+      case DifficultyFeedback.tooEasy:
+        return AppColors.success;
+      case DifficultyFeedback.justRight:
+        return AppColors.primary;
+      case DifficultyFeedback.struggling:
+        return AppColors.warning;
+    }
+  }
+
+  Widget _buildJustRightMessage() {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle, color: AppColors.success),
+          SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              '현재 운동이 적절합니다. 계속 진행하세요!',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.success,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlternativesSection(SessionFeedbackState feedbackState) {
+    if (feedbackState.isLoading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(AppSpacing.md),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (feedbackState.error != null) {
+      return Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        child: Text(
+          '대안을 불러올 수 없습니다: ${feedbackState.error}',
+          style: const TextStyle(color: AppColors.error),
+        ),
+      );
+    }
+
+    final alternatives = feedbackState.alternatives;
+    if (alternatives.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
@@ -201,181 +360,42 @@ class _ExerciseSwapSheetState extends ConsumerState<ExerciseSwapSheet> {
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         ),
         child: const Text(
-          'AI 분석 정보가 없습니다',
+          '대안 운동이 없습니다',
           style: TextStyle(color: AppColors.neutral500),
         ),
       );
     }
 
-    final topReasons = reasoning.getTopReasons(3);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      ),
-      child: Column(
-        children: topReasons.map((reason) => _ReasonRow(reason: reason)).toList(),
-      ),
-    );
-  }
-
-  Widget _buildAlternativesSection(AsyncValue<List<ExerciseAlternative>> alternativesAsync) {
-    return alternativesAsync.when(
-      loading: () => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(AppSpacing.md),
-          child: CircularProgressIndicator(),
-        ),
-      ),
-      error: (_, __) => const Text('대안을 불러올 수 없습니다'),
-      data: (alternatives) {
-        if (alternatives.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-            ),
-            child: const Text(
-              '대안 운동이 없습니다',
-              style: TextStyle(color: AppColors.neutral500),
-            ),
-          );
-        }
-
-        return Column(
-          children: alternatives
-              .map((alt) => _AlternativeCard(
-                    alternative: alt,
-                    isSelected: _selectedAlternativeId == alt.exerciseId,
-                    onTap: () {
-                      setState(() {
-                        _selectedAlternativeId = alt.exerciseId;
-                      });
-                    },
-                  ))
-              .toList(),
-        );
-      },
+    return Column(
+      children: alternatives
+          .map((alt) => _SessionAlternativeCard(
+                alternative: alt,
+                isSelected: _selectedAlternativeId == alt.exerciseId,
+                onTap: () {
+                  setState(() {
+                    _selectedAlternativeId = alt.exerciseId;
+                  });
+                },
+              ))
+          .toList(),
     );
   }
 
   void _handleSwap() {
     if (_selectedAlternativeId != null) {
-      widget.onSwap?.call(_selectedAlternativeId!, null);
+      final reason = _selectedFeedback?.id;
+      widget.onSwap?.call(_selectedAlternativeId!, reason);
       Navigator.pop(context);
     }
   }
 }
 
-class _ReasonRow extends StatelessWidget {
-  final AIReasoningPoint reason;
-
-  const _ReasonRow({required this.reason});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Icon(
-              _getCategoryIcon(reason.category),
-              size: 16,
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  reason.category.displayName,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral500,
-                  ),
-                ),
-                Text(
-                  reason.displayExplanation,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.neutralBlack,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _ConfidenceBadge(confidence: reason.confidence),
-        ],
-      ),
-    );
-  }
-
-  IconData _getCategoryIcon(ReasoningCategory category) {
-    switch (category) {
-      case ReasoningCategory.goalAlignment:
-        return Icons.flag;
-      case ReasoningCategory.historyBased:
-        return Icons.history;
-      case ReasoningCategory.safety:
-        return Icons.shield;
-      case ReasoningCategory.formReadiness:
-        return Icons.accessibility_new;
-      case ReasoningCategory.progressiveOverload:
-        return Icons.trending_up;
-      case ReasoningCategory.recovery:
-        return Icons.favorite;
-      case ReasoningCategory.equipment:
-        return Icons.fitness_center;
-      case ReasoningCategory.timeEfficiency:
-        return Icons.timer;
-    }
-  }
-}
-
-class _ConfidenceBadge extends StatelessWidget {
-  final double confidence;
-
-  const _ConfidenceBadge({required this.confidence});
-
-  @override
-  Widget build(BuildContext context) {
-    final percentage = (confidence * 100).round();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.neutral100,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '$percentage%',
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: AppColors.neutral500,
-        ),
-      ),
-    );
-  }
-}
-
-class _AlternativeCard extends StatelessWidget {
-  final ExerciseAlternative alternative;
+class _SessionAlternativeCard extends StatelessWidget {
+  final SessionAlternative alternative;
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _AlternativeCard({
+  const _SessionAlternativeCard({
     required this.alternative,
     required this.isSelected,
     required this.onTap,
@@ -430,22 +450,41 @@ class _AlternativeCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        alternative.displayName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.neutralBlack,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
                       Row(
                         children: [
-                          _TypeBadge(type: alternative.type),
-                          const SizedBox(width: 8),
-                          _DifficultyBadge(difficulty: alternative.difficulty),
+                          Expanded(
+                            child: Text(
+                              alternative.displayName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.neutralBlack,
+                              ),
+                            ),
+                          ),
+                          if (alternative.isRecommended)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '추천',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
+                      const SizedBox(height: 4),
+                      _AlternativeTypeBadge(type: alternative.type),
                       const SizedBox(height: 4),
                       Text(
                         alternative.displayReason,
@@ -466,10 +505,10 @@ class _AlternativeCard extends StatelessWidget {
   }
 }
 
-class _TypeBadge extends StatelessWidget {
+class _AlternativeTypeBadge extends StatelessWidget {
   final AlternativeType type;
 
-  const _TypeBadge({required this.type});
+  const _AlternativeTypeBadge({required this.type});
 
   @override
   Widget build(BuildContext context) {
@@ -481,8 +520,15 @@ class _TypeBadge extends StatelessWidget {
       case AlternativeType.harder:
         color = AppColors.error;
         break;
-      default:
+      case AlternativeType.equipmentBased:
+        color = AppColors.info;
+        break;
+      case AlternativeType.injuryFriendly:
+        color = AppColors.warning;
+        break;
+      case AlternativeType.samePattern:
         color = AppColors.primary;
+        break;
     }
 
     return Container(
@@ -497,31 +543,6 @@ class _TypeBadge extends StatelessWidget {
           fontSize: 10,
           fontWeight: FontWeight.bold,
           color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _DifficultyBadge extends StatelessWidget {
-  final ExerciseDifficulty difficulty;
-
-  const _DifficultyBadge({required this.difficulty});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.neutral100,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        difficulty.displayName,
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
-          color: AppColors.neutral700,
         ),
       ),
     );

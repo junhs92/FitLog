@@ -1,4 +1,5 @@
 import '../../../../shared/models/result.dart';
+import '../../data/models/session_exercise_input.dart';
 import '../entities/exercise_entity.dart';
 import '../entities/exercise_set_entity.dart';
 import '../entities/session_entity.dart';
@@ -21,13 +22,39 @@ abstract class SessionRepository {
   Future<Result<SessionEntity?>> getActiveSession(String clientId);
 
   /// Start a new session for a client
-  /// If programId and workoutDayId are provided, exercises will be auto-populated
+  /// If programId is provided, the session will be linked to the training program
+  /// If exercises are provided, they will be added to session_exercises
+  /// If aiReasoning is provided, it will be saved as session-level AI description
   Future<Result<SessionEntity>> startSession({
     required String clientId,
     String? sessionType,
     String? notes,
     String? programId,
-    String? workoutDayId,
+    List<Map<String, dynamic>>? exercises,
+    String? aiReasoning,
+  });
+
+  /// Activate an existing session (created by AI edge function)
+  /// Updates status from 'scheduled' to 'active' and creates session_exercises from the list
+  /// If exercises list is provided, session_exercises will be created from it
+  @Deprecated('Use createSession instead')
+  Future<Result<SessionEntity>> activateSession({
+    required String sessionId,
+    List<Map<String, dynamic>>? exercises,
+  });
+
+  /// Unified session creation method (Template Pattern)
+  ///
+  /// Handles all 3 session start flows:
+  /// - AI: [existingSessionId] provided → activate pre-created session
+  /// - Previous: [exercises] provided → create new session with exercises
+  /// - Empty: no exercises → create empty session for manual entry
+  Future<Result<SessionEntity>> createSession({
+    required String clientId,
+    List<SessionExerciseInput>? exercises,
+    String? programId,
+    String? existingSessionId,
+    String? aiReasoning,
   });
 
   /// Complete an active session
@@ -44,6 +71,13 @@ abstract class SessionRepository {
   Future<Result<SessionExerciseEntity>> addExerciseToSession({
     required String sessionId,
     required ExerciseEntity exercise,
+    int? order,
+  });
+
+  /// Add an exercise to the session by ID (for swap operations)
+  Future<Result<SessionExerciseEntity>> addExerciseToSessionById({
+    required String sessionId,
+    required String exerciseId,
     int? order,
   });
 
@@ -66,6 +100,7 @@ abstract class SessionRepository {
     Duration? duration,
     double? distance,
     List<SetTag> tags,
+    List<String> comments,
     String? notes,
   });
 
@@ -97,10 +132,16 @@ abstract class SessionRepository {
     required String notes,
   });
 
+  /// Update session exercise notes (for storing trainer comments)
+  Future<Result<void>> updateSessionExerciseNotes({
+    required String sessionExerciseId,
+    required String notes,
+  });
+
   /// Get exercise library
   Future<Result<List<ExerciseEntity>>> getExercises({
     String? category,
-    String? movementPattern,
+    String? movementGroup,
     String? searchQuery,
   });
 

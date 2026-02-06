@@ -91,6 +91,7 @@ class ClientsListScreen extends ConsumerWidget {
                           final trainerId = trainerIdAsync.valueOrNull ?? '';
                           ProgramSelectionSheet.show(
                             context: context,
+                            ref: ref,
                             clientId: client.id,
                             clientName: client.name,
                             trainerId: trainerId,

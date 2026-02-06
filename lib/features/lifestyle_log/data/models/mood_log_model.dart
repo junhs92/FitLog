@@ -21,10 +21,10 @@ class MoodLogModel extends MoodLogEntity {
       clientId: json['client_id'] as String,
       logDate: DateTime.parse(json['log_date'] as String),
       mood: json['mood'] != null
-          ? _moodFromString(json['mood'] as String)
+          ? _moodFromInt(json['mood'] as int)
           : null,
       energy: json['energy'] != null
-          ? _energyFromString(json['energy'] as String)
+          ? _energyFromInt(json['energy'] as int)
           : null,
       stressLevel: json['stress_level'] as int?,
       notes: json['notes'] as String?,
@@ -41,8 +41,8 @@ class MoodLogModel extends MoodLogEntity {
       'id': id,
       'client_id': clientId,
       'log_date': logDate.toIso8601String().split('T')[0],
-      'mood': mood != null ? _moodToString(mood!) : null,
-      'energy': energy != null ? _energyToString(energy!) : null,
+      'mood': mood != null ? _moodToInt(mood!) : null,
+      'energy': energy != null ? _energyToInt(energy!) : null,
       'stress_level': stressLevel,
       'notes': notes,
       'created_at': createdAt.toIso8601String(),
@@ -65,67 +65,71 @@ class MoodLogModel extends MoodLogEntity {
     );
   }
 
-  static MoodLevel _moodFromString(String value) {
+  /// Convert integer (1-5) to MoodLevel enum
+  static MoodLevel _moodFromInt(int value) {
     switch (value) {
-      case 'very_low':
+      case 1:
         return MoodLevel.veryLow;
-      case 'low':
+      case 2:
         return MoodLevel.low;
-      case 'neutral':
+      case 3:
         return MoodLevel.neutral;
-      case 'good':
+      case 4:
         return MoodLevel.good;
-      case 'excellent':
+      case 5:
         return MoodLevel.excellent;
       default:
         return MoodLevel.neutral;
     }
   }
 
-  static String _moodToString(MoodLevel mood) {
+  /// Convert MoodLevel enum to integer (1-5)
+  static int _moodToInt(MoodLevel mood) {
     switch (mood) {
       case MoodLevel.veryLow:
-        return 'very_low';
+        return 1;
       case MoodLevel.low:
-        return 'low';
+        return 2;
       case MoodLevel.neutral:
-        return 'neutral';
+        return 3;
       case MoodLevel.good:
-        return 'good';
+        return 4;
       case MoodLevel.excellent:
-        return 'excellent';
+        return 5;
     }
   }
 
-  static EnergyLevel _energyFromString(String value) {
+  /// Convert integer (1-5) to EnergyLevel enum
+  static EnergyLevel _energyFromInt(int value) {
     switch (value) {
-      case 'exhausted':
+      case 1:
         return EnergyLevel.exhausted;
-      case 'tired':
+      case 2:
         return EnergyLevel.tired;
-      case 'normal':
+      case 3:
         return EnergyLevel.normal;
-      case 'energetic':
+      case 4:
         return EnergyLevel.energetic;
-      case 'very_energetic':
+      case 5:
         return EnergyLevel.veryEnergetic;
       default:
         return EnergyLevel.normal;
     }
   }
 
-  static String _energyToString(EnergyLevel energy) {
+  /// Convert EnergyLevel enum to integer (1-5)
+  static int _energyToInt(EnergyLevel energy) {
     switch (energy) {
       case EnergyLevel.exhausted:
-        return 'exhausted';
+        return 1;
       case EnergyLevel.tired:
-        return 'tired';
+        return 2;
       case EnergyLevel.normal:
-        return 'normal';
+        return 3;
       case EnergyLevel.energetic:
-        return 'energetic';
+        return 4;
       case EnergyLevel.veryEnergetic:
-        return 'very_energetic';
+        return 5;
     }
   }
 }

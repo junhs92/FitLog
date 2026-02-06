@@ -66,13 +66,13 @@ class RestTimerCompact extends ConsumerWidget {
 
 /// Full rest timer widget with controls
 class RestTimerWidget extends ConsumerWidget {
-  final bool showPresets;
   final bool showControls;
+  final bool showPresets;
 
   const RestTimerWidget({
     super.key,
-    this.showPresets = true,
     this.showControls = true,
+    this.showPresets = true,
   });
 
   @override
@@ -99,39 +99,30 @@ class RestTimerWidget extends ConsumerWidget {
 
           if (showControls) ...[
             const SizedBox(height: AppSpacing.md),
-            // Control buttons
+            // Control buttons: reset, start/pause, add, skip
             _TimerControls(
               isRunning: timerState.isRunning,
               isPaused: timerState.isPaused,
               onStart: () => notifier.startTimer(),
               onPause: notifier.pauseTimer,
               onResume: notifier.resumeTimer,
-              onSkip: notifier.skipTimer,
               onReset: notifier.resetTimer,
               onAddTime: () => notifier.addTime(30),
+              onSkip: notifier.skipTimer,
             ),
           ],
 
           if (showPresets) ...[
             const SizedBox(height: AppSpacing.md),
-            // Preset buttons
+            // Preset duration buttons (selection only, doesn't start timer)
             _PresetButtons(
               currentDuration: timerState.totalSeconds,
               onPresetSelected: (seconds) {
+                // Only set the duration, don't start the timer
                 notifier.setDefaultDuration(seconds);
-                if (!timerState.isRunning) {
-                  notifier.startTimer(seconds: seconds);
-                }
               },
             ),
           ],
-
-          const SizedBox(height: AppSpacing.sm),
-          // Auto-start toggle
-          _AutoStartToggle(
-            autoStart: timerState.autoStart,
-            onChanged: (value) => notifier.setAutoStart(value),
-          ),
         ],
       ),
     );
@@ -228,16 +219,16 @@ class _TimerDisplay extends StatelessWidget {
   }
 }
 
-/// Timer control buttons
+/// Timer control buttons: reset, start/pause, add
 class _TimerControls extends StatelessWidget {
   final bool isRunning;
   final bool isPaused;
   final VoidCallback onStart;
   final VoidCallback onPause;
   final VoidCallback onResume;
-  final VoidCallback onSkip;
   final VoidCallback onReset;
   final VoidCallback onAddTime;
+  final VoidCallback? onSkip;
 
   const _TimerControls({
     required this.isRunning,
@@ -245,9 +236,9 @@ class _TimerControls extends StatelessWidget {
     required this.onStart,
     required this.onPause,
     required this.onResume,
-    required this.onSkip,
     required this.onReset,
     required this.onAddTime,
+    this.onSkip,
   });
 
   @override
@@ -265,63 +256,96 @@ class _TimerControls extends StatelessWidget {
           ),
         ),
 
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
 
-        // Play/Pause button
+        // Play/Pause button (larger)
         if (isRunning)
           IconButton.filled(
             onPressed: onPause,
-            icon: const Icon(Icons.pause),
+            icon: const Icon(Icons.pause, size: 28),
             tooltip: 'Pause',
             style: IconButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.neutralWhite,
+              minimumSize: const Size(56, 56),
             ),
           )
         else if (isPaused)
           IconButton.filled(
             onPressed: onResume,
-            icon: const Icon(Icons.play_arrow),
+            icon: const Icon(Icons.play_arrow, size: 28),
             tooltip: 'Resume',
             style: IconButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.neutralWhite,
+              minimumSize: const Size(56, 56),
             ),
           )
         else
           IconButton.filled(
             onPressed: onStart,
-            icon: const Icon(Icons.play_arrow),
+            icon: const Icon(Icons.play_arrow, size: 28),
             tooltip: 'Start',
             style: IconButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.neutralWhite,
+              minimumSize: const Size(56, 56),
             ),
           ),
 
-        const SizedBox(width: 12),
+        const SizedBox(width: 16),
+
+        // Add 30s button with label
+        Material(
+          color: AppColors.neutral100,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: onAddTime,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: const Text(
+                '+30s',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.neutral700,
+                ),
+              ),
+            ),
+          ),
+        ),
 
         // Skip button
-        IconButton(
-          onPressed: onSkip,
-          icon: const Icon(Icons.skip_next),
-          tooltip: 'Skip',
-          style: IconButton.styleFrom(
-            backgroundColor: AppColors.neutral100,
+        if (onSkip != null && (isRunning || isPaused)) ...[
+          const SizedBox(width: 16),
+          Material(
+            color: AppColors.neutral200,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onSkip,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.skip_next, size: 18, color: AppColors.neutral700),
+                    SizedBox(width: 4),
+                    Text(
+                      '건너뛰기',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.neutral700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // Add 30s button
-        IconButton(
-          onPressed: onAddTime,
-          icon: const Icon(Icons.add),
-          tooltip: '+30s',
-          style: IconButton.styleFrom(
-            backgroundColor: AppColors.neutral100,
-          ),
-        ),
+        ],
       ],
     );
   }
@@ -369,39 +393,6 @@ class _PresetButtons extends StatelessWidget {
           );
         }).toList(),
       ),
-    );
-  }
-}
-
-/// Auto-start toggle switch
-class _AutoStartToggle extends StatelessWidget {
-  final bool autoStart;
-  final ValueChanged<bool> onChanged;
-
-  const _AutoStartToggle({
-    required this.autoStart,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'Auto-start after set',
-          style: TextStyle(
-            fontSize: 12,
-            color: AppColors.neutral600,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Switch.adaptive(
-          value: autoStart,
-          onChanged: onChanged,
-          activeColor: AppColors.primary,
-        ),
-      ],
     );
   }
 }
@@ -464,8 +455,8 @@ class RestTimerBottomSheet extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.all(AppSpacing.md),
             child: RestTimerWidget(
-              showPresets: true,
               showControls: true,
+              showPresets: true,
             ),
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + AppSpacing.md),

@@ -5,12 +5,12 @@ import '../repositories/session_repository.dart';
 /// Parameters for fetching exercises
 class GetExercisesParams {
   final String? category;
-  final String? movementPattern;
+  final String? movementGroup;
   final String? searchQuery;
 
   const GetExercisesParams({
     this.category,
-    this.movementPattern,
+    this.movementGroup,
     this.searchQuery,
   });
 }
@@ -24,7 +24,7 @@ class GetExercisesUseCase {
   Future<Result<List<ExerciseEntity>>> call(GetExercisesParams params) {
     return _repository.getExercises(
       category: params.category,
-      movementPattern: params.movementPattern,
+      movementGroup: params.movementGroup,
       searchQuery: params.searchQuery,
     );
   }

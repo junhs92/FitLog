@@ -275,7 +275,7 @@ class RpePattern extends Equatable {
   final TrendDirection trend;
 
   const RpePattern({
-    this.averageRpe = 7.0,
+    this.averageRpe = 6.0,
     this.trend = TrendDirection.stable,
   });
 

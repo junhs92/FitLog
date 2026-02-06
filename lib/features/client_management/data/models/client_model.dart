@@ -1,3 +1,4 @@
+import '../../../../core/utils/timestamp_utils.dart';
 import '../../domain/entities/client_entity.dart';
 
 /// Client data model for API/database operations
@@ -100,7 +101,7 @@ class ClientModel {
       'weight_kg': weight,
       'fitness_goals': goals,
       'avatar_url': profilePhotoUrl,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nowLocalIso8601(),
     };
   }
 
@@ -108,7 +109,7 @@ class ClientModel {
   Map<String, dynamic> toRelationshipUpdateJson() {
     return {
       'trainer_notes': notes,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': nowLocalIso8601(),
     };
   }
 

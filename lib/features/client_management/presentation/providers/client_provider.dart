@@ -202,6 +202,19 @@ final clientMutationProvider =
 // Search query provider
 final clientSearchQueryProvider = StateProvider<String>((ref) => '');
 
+// Selected client provider for master-detail layout (tablet/desktop)
+// Stores the currently selected client ID in the master list
+final selectedClientIdProvider = StateProvider<String?>((ref) => null);
+
+// Selected client entity provider (derived from selectedClientIdProvider)
+final selectedClientProvider = Provider.autoDispose<AsyncValue<ClientEntity?>>((ref) {
+  final selectedId = ref.watch(selectedClientIdProvider);
+  if (selectedId == null) {
+    return const AsyncValue.data(null);
+  }
+  return ref.watch(clientProvider(selectedId)).whenData((client) => client);
+});
+
 // Filtered clients provider
 final filteredClientsProvider = Provider.autoDispose<AsyncValue<List<ClientEntity>>>((ref) {
   final clientsAsync = ref.watch(clientsProvider);

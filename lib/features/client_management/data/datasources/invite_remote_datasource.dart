@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/utils/invite_code_generator.dart';
+import '../../../../core/utils/timestamp_utils.dart';
 import '../../domain/entities/invite_entity.dart';
 
 /// Remote data source for invite operations
@@ -60,7 +61,7 @@ class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
           'invitation_code': code,
           'status': 'pending',
           'invited_by': trainerId,
-          'invitation_sent_at': DateTime.now().toIso8601String(),
+          'invitation_sent_at': nowLocalIso8601(),
           'expires_at': expiresAt.toIso8601String(),
           if (clientEmail != null) 'client_email': clientEmail,
         })
@@ -110,8 +111,8 @@ class InviteRemoteDataSourceImpl implements InviteRemoteDataSource {
         .update({
           'client_id': clientId,
           'status': 'active',
-          'invitation_accepted_at': DateTime.now().toIso8601String(),
-          'relationship_started_at': DateTime.now().toIso8601String(),
+          'invitation_accepted_at': nowLocalIso8601(),
+          'relationship_started_at': nowLocalIso8601(),
         })
         .eq('id', invite.id);
   }

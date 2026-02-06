@@ -9,6 +9,7 @@ class SessionModel extends SessionEntity {
     required super.trainerId,
     required super.clientId,
     super.clientName,
+    super.programId,
     required super.status,
     super.sessionType,
     super.exercises,
@@ -20,6 +21,15 @@ class SessionModel extends SessionEntity {
     super.completedAt,
     super.duration,
     required super.createdAt,
+    super.sessionNumber,
+    super.focusArea,
+    super.daysSinceLast,
+    super.aiReasoning,
+    super.savedTotalExercises,
+    super.savedTotalSets,
+    super.savedTotalVolume,
+    super.savedAvgReps,
+    super.savedAvgRpe,
   });
 
   factory SessionModel.fromJson(Map<String, dynamic> json) {
@@ -40,11 +50,13 @@ class SessionModel extends SessionEntity {
         status = SessionStatus.scheduled;
     }
 
-    // Parse exercises if available
+    // Parse exercises if available and sort by order
+    // Explicitly create List<SessionExerciseEntity> to avoid runtime type issues
     final exercisesData = json['session_exercises'] ?? json['exercises'] ?? [];
-    final List<SessionExerciseEntity> exercises = (exercisesData as List)
-        .map((e) => SessionExerciseModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final List<SessionExerciseEntity> exercises = <SessionExerciseEntity>[
+      for (final e in exercisesData as List)
+        SessionExerciseModel.fromJson(e as Map<String, dynamic>),
+    ]..sort((a, b) => a.order.compareTo(b.order));
 
     // Parse duration
     Duration? duration;
@@ -65,6 +77,7 @@ class SessionModel extends SessionEntity {
       trainerId: json['trainer_id'] as String,
       clientId: json['client_id'] as String,
       clientName: clientName,
+      programId: json['program_id'] as String?,
       status: status,
       sessionType: json['session_type'] as String?,
       exercises: exercises,
@@ -83,6 +96,15 @@ class SessionModel extends SessionEntity {
       duration: duration,
       createdAt: DateTime.parse(
           json['created_at'] as String? ?? DateTime.now().toIso8601String()),
+      sessionNumber: json['session_number'] as int?,
+      focusArea: json['focus_area'] as String?,
+      daysSinceLast: json['days_since_last'] as int?,
+      aiReasoning: json['ai_reasoning'] as String?,
+      savedTotalExercises: json['total_exercises'] as int?,
+      savedTotalSets: json['total_sets'] as int?,
+      savedTotalVolume: (json['total_volume'] as num?)?.toDouble(),
+      savedAvgReps: (json['avg_reps'] as num?)?.toDouble(),
+      savedAvgRpe: (json['avg_rpe'] as num?)?.toDouble(),
     );
   }
 
@@ -104,6 +126,7 @@ class SessionModel extends SessionEntity {
       'id': id,
       'trainer_id': trainerId,
       'client_id': clientId,
+      'program_id': programId,
       'status': _statusToString(status),
       'session_type': sessionType,
       'notes': notes,
@@ -114,6 +137,15 @@ class SessionModel extends SessionEntity {
       'completed_at': completedAt?.toIso8601String(),
       'duration_seconds': duration?.inSeconds,
       'created_at': createdAt.toIso8601String(),
+      'session_number': sessionNumber,
+      'focus_area': focusArea,
+      'days_since_last': daysSinceLast,
+      'ai_reasoning': aiReasoning,
+      'total_exercises': savedTotalExercises,
+      'total_sets': savedTotalSets,
+      'total_volume': savedTotalVolume,
+      'avg_reps': savedAvgReps,
+      'avg_rpe': savedAvgRpe,
     };
   }
 
@@ -121,10 +153,15 @@ class SessionModel extends SessionEntity {
     return {
       'trainer_id': trainerId,
       'client_id': clientId,
+      'program_id': programId,
       'status': _statusToString(status),
       'session_type': sessionType,
       'notes': notes,
       'started_at': startedAt?.toIso8601String(),
+      'session_number': sessionNumber,
+      'focus_area': focusArea,
+      'days_since_last': daysSinceLast,
+      'ai_reasoning': aiReasoning,
     };
   }
 
@@ -134,6 +171,7 @@ class SessionModel extends SessionEntity {
       trainerId: entity.trainerId,
       clientId: entity.clientId,
       clientName: entity.clientName,
+      programId: entity.programId,
       status: entity.status,
       sessionType: entity.sessionType,
       exercises: entity.exercises,
@@ -145,6 +183,15 @@ class SessionModel extends SessionEntity {
       completedAt: entity.completedAt,
       duration: entity.duration,
       createdAt: entity.createdAt,
+      sessionNumber: entity.sessionNumber,
+      focusArea: entity.focusArea,
+      daysSinceLast: entity.daysSinceLast,
+      aiReasoning: entity.aiReasoning,
+      savedTotalExercises: entity.savedTotalExercises,
+      savedTotalSets: entity.savedTotalSets,
+      savedTotalVolume: entity.savedTotalVolume,
+      savedAvgReps: entity.savedAvgReps,
+      savedAvgRpe: entity.savedAvgRpe,
     );
   }
 
