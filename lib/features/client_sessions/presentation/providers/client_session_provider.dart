@@ -112,7 +112,7 @@ final clientScheduledAppointmentsProvider = FutureProvider.family<List<SessionEn
           sessionStatus = SessionStatus.cancelled;
           break;
         case 'no_show':
-          sessionStatus = SessionStatus.cancelled;
+          sessionStatus = SessionStatus.noShow;
           break;
         default:
           sessionStatus = SessionStatus.scheduled;

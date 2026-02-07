@@ -237,6 +237,8 @@ class ClientSessionCard extends ConsumerWidget {
         return AppColors.success;
       case SessionStatus.cancelled:
         return AppColors.neutral500;
+      case SessionStatus.noShow:
+        return AppColors.error;
     }
   }
 
@@ -250,6 +252,8 @@ class ClientSessionCard extends ConsumerWidget {
         return Icons.check_circle;
       case SessionStatus.cancelled:
         return Icons.cancel;
+      case SessionStatus.noShow:
+        return Icons.person_off;
     }
   }
 }

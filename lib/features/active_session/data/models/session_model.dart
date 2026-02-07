@@ -46,6 +46,9 @@ class SessionModel extends SessionEntity {
       case 'cancelled':
         status = SessionStatus.cancelled;
         break;
+      case 'no_show':
+        status = SessionStatus.noShow;
+        break;
       default:
         status = SessionStatus.scheduled;
     }
@@ -118,6 +121,8 @@ class SessionModel extends SessionEntity {
         return 'completed';
       case SessionStatus.cancelled:
         return 'cancelled';
+      case SessionStatus.noShow:
+        return 'no_show';
     }
   }
 

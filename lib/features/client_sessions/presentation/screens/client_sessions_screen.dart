@@ -378,6 +378,8 @@ class _ClientSessionsScreenState extends ConsumerState<ClientSessionsScreen> {
         return AppColors.success;
       case SessionStatus.cancelled:
         return AppColors.neutral500;
+      case SessionStatus.noShow:
+        return AppColors.error;
     }
   }
 }
@@ -531,6 +533,8 @@ class _ClientCalendarView extends ConsumerWidget {
         return AppColors.success;
       case SessionStatus.cancelled:
         return AppColors.neutral500;
+      case SessionStatus.noShow:
+        return AppColors.error;
     }
   }
 }

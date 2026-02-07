@@ -6,6 +6,7 @@ enum SessionStatus {
   active,
   completed,
   cancelled,
+  noShow,
 }
 
 extension SessionStatusExtension on SessionStatus {
@@ -19,6 +20,8 @@ extension SessionStatusExtension on SessionStatus {
         return 'Completed';
       case SessionStatus.cancelled:
         return 'Cancelled';
+      case SessionStatus.noShow:
+        return 'No Show';
     }
   }
 
