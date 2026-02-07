@@ -33,22 +33,24 @@ class TrainerMessage {
   }
 }
 
-/// Entity for upcoming session
+/// Entity for upcoming scheduled session (from client_schedules table)
 class UpcomingSession {
   final String id;
   final String trainerId;
   final String trainerName;
-  final String sessionType;
   final DateTime scheduledAt;
+  final int durationMinutes;
   final String status;
+  final String? notes;
 
   const UpcomingSession({
     required this.id,
     required this.trainerId,
     required this.trainerName,
-    required this.sessionType,
     required this.scheduledAt,
+    required this.durationMinutes,
     required this.status,
+    this.notes,
   });
 
   factory UpcomingSession.fromJson(Map<String, dynamic> json) {
@@ -57,10 +59,19 @@ class UpcomingSession {
       id: json['id'] as String,
       trainerId: json['trainer_id'] as String,
       trainerName: trainer?['full_name'] as String? ?? 'Trainer',
-      sessionType: json['session_type'] as String,
       scheduledAt: DateTime.parse(json['scheduled_at'] as String),
+      durationMinutes: json['duration_minutes'] as int? ?? 60,
       status: json['status'] as String,
+      notes: json['notes'] as String?,
     );
+  }
+
+  /// Display text for session type (based on duration or notes)
+  String get sessionType {
+    if (notes != null && notes!.isNotEmpty) {
+      return notes!;
+    }
+    return 'PT Session';
   }
 }
 
@@ -89,7 +100,7 @@ final latestTrainerMessageProvider =
   }
 });
 
-/// Provider for upcoming sessions
+/// Provider for upcoming sessions from client_schedules table
 final upcomingSessionsProvider =
     FutureProvider.family<List<UpcomingSession>, String>((ref, clientId) async {
   final supabase = Supabase.instance.client;
@@ -97,9 +108,14 @@ final upcomingSessionsProvider =
   try {
     final now = nowLocalIso8601();
     final response = await supabase
-        .from('sessions')
+        .from('client_schedules')
         .select('''
-          *,
+          id,
+          trainer_id,
+          scheduled_at,
+          duration_minutes,
+          status,
+          notes,
           trainer:trainer_id(full_name)
         ''')
         .eq('client_id', clientId)

@@ -75,24 +75,135 @@ final clientSessionsCalendarProvider =
   return ClientSessionsCalendarNotifier();
 });
 
-/// Provider for all client sessions (completed + scheduled)
+/// Provider for scheduled appointments from client_schedules table
+final clientScheduledAppointmentsProvider = FutureProvider.family<List<SessionEntity>, String>((ref, clientId) async {
+  final supabase = Supabase.instance.client;
+
+  try {
+    debugPrint('[ClientSessions] Fetching appointments for client: $clientId');
+
+    // Fetch scheduled appointments for this client
+    final response = await supabase
+        .from('client_schedules')
+        .select('''
+          id,
+          trainer_id,
+          scheduled_at,
+          duration_minutes,
+          status,
+          notes,
+          created_at
+        ''')
+        .eq('client_id', clientId)
+        .order('scheduled_at', ascending: false);
+
+    debugPrint('[ClientSessions] Raw response: $response');
+    debugPrint('[ClientSessions] Found ${(response as List).length} appointments');
+
+    // Convert to SessionEntity format for unified display
+    final appointments = (response).map((json) {
+      final status = json['status'] as String;
+      SessionStatus sessionStatus;
+      switch (status) {
+        case 'completed':
+          sessionStatus = SessionStatus.completed;
+          break;
+        case 'cancelled':
+          sessionStatus = SessionStatus.cancelled;
+          break;
+        case 'no_show':
+          sessionStatus = SessionStatus.cancelled;
+          break;
+        default:
+          sessionStatus = SessionStatus.scheduled;
+      }
+
+      debugPrint('[ClientSessions] Appointment: ${json['id']} at ${json['scheduled_at']} status: $status');
+
+      return SessionEntity(
+        id: json['id'] as String,
+        trainerId: json['trainer_id'] as String,
+        clientId: clientId,
+        status: sessionStatus,
+        scheduledAt: DateTime.parse(json['scheduled_at'] as String),
+        createdAt: DateTime.parse(json['created_at'] as String),
+        isFromSchedule: true, // Mark as from schedule table
+      );
+    }).toList();
+
+    debugPrint('[ClientSessions] Returning ${appointments.length} appointments');
+    return appointments;
+  } catch (e, stack) {
+    debugPrint('[ClientSessions] Error fetching appointments: $e');
+    debugPrint('[ClientSessions] Stack: $stack');
+    return [];
+  }
+});
+
+/// Provider for all client sessions (workout sessions + scheduled appointments)
 final clientAllSessionsProvider = FutureProvider.family<List<SessionEntity>, String>((ref, clientId) async {
+  debugPrint('[ClientSessions] clientAllSessionsProvider called for: $clientId');
+
   final repository = ref.read(sessionRepositoryProvider);
 
+  // Get actual workout sessions
   final result = await repository.getSessions(clientId: clientId);
-
-  return result.fold(
-    (failure) => <SessionEntity>[],
+  final workoutSessions = result.fold(
+    (failure) {
+      debugPrint('[ClientSessions] Failed to get workout sessions: ${failure.message}');
+      return <SessionEntity>[];
+    },
     (sessions) {
-      // Sort by date, most recent first
-      sessions.sort((a, b) {
-        final dateA = a.scheduledAt ?? a.startedAt ?? a.createdAt;
-        final dateB = b.scheduledAt ?? b.startedAt ?? b.createdAt;
-        return dateB.compareTo(dateA);
-      });
+      debugPrint('[ClientSessions] Got ${sessions.length} workout sessions');
       return sessions;
     },
   );
+
+  // Get scheduled appointments - use ref.read for the future directly
+  List<SessionEntity> appointments = [];
+  try {
+    appointments = await ref.read(clientScheduledAppointmentsProvider(clientId).future);
+    debugPrint('[ClientSessions] Got ${appointments.length} scheduled appointments');
+  } catch (e) {
+    debugPrint('[ClientSessions] Error getting appointments: $e');
+  }
+
+  // Merge both lists, avoiding duplicates
+  // A workout session and appointment are considered duplicates if they're within 30 min of each other
+  final merged = <SessionEntity>[];
+  final usedAppointmentIds = <String>{};
+
+  for (final session in workoutSessions) {
+    merged.add(session);
+
+    // Find matching appointment (if any)
+    final sessionTime = session.scheduledAt ?? session.startedAt ?? session.createdAt;
+    for (final appt in appointments) {
+      final apptTime = appt.scheduledAt!;
+      final diff = (sessionTime.difference(apptTime)).abs();
+      if (diff.inMinutes <= 30) {
+        usedAppointmentIds.add(appt.id);
+        break;
+      }
+    }
+  }
+
+  // Add appointments that don't have matching sessions
+  for (final appt in appointments) {
+    if (!usedAppointmentIds.contains(appt.id)) {
+      merged.add(appt);
+    }
+  }
+
+  // Sort by date, most recent first
+  merged.sort((a, b) {
+    final dateA = a.scheduledAt ?? a.startedAt ?? a.createdAt;
+    final dateB = b.scheduledAt ?? b.startedAt ?? b.createdAt;
+    return dateB.compareTo(dateA);
+  });
+
+  debugPrint('[ClientSessions] Total merged sessions: ${merged.length}');
+  return merged;
 });
 
 /// Provider for client's scheduled sessions (upcoming)

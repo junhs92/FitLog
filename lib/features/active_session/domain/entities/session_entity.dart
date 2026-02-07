@@ -58,6 +58,9 @@ class SessionEntity {
   final double? savedAvgReps;
   final double? savedAvgRpe;
 
+  // Flag to indicate this is from client_schedules table (not sessions)
+  final bool isFromSchedule;
+
   const SessionEntity({
     required this.id,
     required this.trainerId,
@@ -84,6 +87,7 @@ class SessionEntity {
     this.savedTotalVolume,
     this.savedAvgReps,
     this.savedAvgRpe,
+    this.isFromSchedule = false,
   });
 
   /// Get total exercises count
@@ -158,6 +162,7 @@ class SessionEntity {
     double? savedTotalVolume,
     double? savedAvgReps,
     double? savedAvgRpe,
+    bool? isFromSchedule,
   }) {
     return SessionEntity(
       id: id ?? this.id,
@@ -185,6 +190,7 @@ class SessionEntity {
       savedTotalVolume: savedTotalVolume ?? this.savedTotalVolume,
       savedAvgReps: savedAvgReps ?? this.savedAvgReps,
       savedAvgRpe: savedAvgRpe ?? this.savedAvgRpe,
+      isFromSchedule: isFromSchedule ?? this.isFromSchedule,
     );
   }
 
