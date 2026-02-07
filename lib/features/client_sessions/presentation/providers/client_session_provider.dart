@@ -231,6 +231,7 @@ final clientCompletedSessionsProvider = FutureProvider.family<List<SessionEntity
 });
 
 /// Provider for sessions grouped by day (for calendar markers)
+/// Excludes cancelled sessions from calendar display (they're kept in logs)
 final clientSessionsByDayProvider = Provider.family<Map<DateTime, List<SessionEntity>>, String>((ref, clientId) {
   final sessionsAsync = ref.watch(clientAllSessionsProvider(clientId));
 
@@ -238,6 +239,9 @@ final clientSessionsByDayProvider = Provider.family<Map<DateTime, List<SessionEn
     data: (sessions) {
       final map = <DateTime, List<SessionEntity>>{};
       for (final session in sessions) {
+        // Skip cancelled sessions - don't show on calendar
+        if (session.status == SessionStatus.cancelled) continue;
+
         final sessionDate = session.scheduledAt ?? session.startedAt ?? session.createdAt;
         final localTime = sessionDate.toLocal();
         final dayKey = DateTime(localTime.year, localTime.month, localTime.day);
