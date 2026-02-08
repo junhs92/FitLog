@@ -36,9 +36,14 @@ class _ClientReportDetailScreenState extends ConsumerState<ClientReportDetailScr
     if (_hasMarkedViewed) return;
     _hasMarkedViewed = true;
 
-    // Mark as viewed if not already
+    // Mark as viewed if not already (wrapped in try-catch as clients may not have UPDATE permission)
     if (report.status != ReportStatus.viewed) {
-      ref.read(reportRepositoryProvider).markAsViewed(widget.reportId);
+      try {
+        ref.read(reportRepositoryProvider).markAsViewed(widget.reportId);
+      } catch (e) {
+        // Silently ignore - client may not have permission to update
+        debugPrint('[ClientReport] Could not mark as viewed: $e');
+      }
     }
   }
 

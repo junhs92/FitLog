@@ -5,6 +5,7 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../active_session/domain/entities/session_entity.dart';
 import '../../../active_session/presentation/providers/session_provider.dart';
+import '../../../client_sessions/presentation/providers/client_session_provider.dart';
 import '../../../muscle_map/domain/entities/client_muscle_map_entity.dart';
 import '../../../muscle_map/domain/entities/muscle_activity_entity.dart';
 import '../../../muscle_map/domain/entities/muscle_group.dart';
@@ -853,11 +854,11 @@ class _HistoryTab extends ConsumerWidget {
     return sessionHistoryAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
-      data: (sessions) => _buildSessionHistory(context, sessions),
+      data: (sessions) => _buildSessionHistory(context, ref, sessions),
     );
   }
 
-  Widget _buildSessionHistory(BuildContext context, List<SessionEntity> sessions) {
+  Widget _buildSessionHistory(BuildContext context, WidgetRef ref, List<SessionEntity> sessions) {
     if (sessions.isEmpty) {
       return _buildEmptyState();
     }
@@ -940,7 +941,7 @@ class _HistoryTab extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: SessionHistoryCard(
                   session: session,
-                  onTap: () => context.push('/trainer/report/${session.id}'),
+                  onTap: () => _navigateToReport(context, ref, session),
                 ),
               )),
         ],
@@ -981,6 +982,24 @@ class _HistoryTab extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _navigateToReport(BuildContext context, WidgetRef ref, SessionEntity session) {
+    // Get report for this session
+    final reportAsync = ref.read(sessionReportProvider(session.id));
+    final report = reportAsync.valueOrNull;
+
+    if (report != null) {
+      context.push('/client/report/${report.id}');
+    } else {
+      // Show message that report is not available yet
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Report not available yet'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   String _formatVolume(double volume) {
