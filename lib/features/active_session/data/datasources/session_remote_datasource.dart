@@ -803,6 +803,8 @@ class SessionRemoteDataSource {
         return 'completed';
       case SessionStatus.cancelled:
         return 'cancelled';
+      case SessionStatus.noShow:
+        return 'no_show';
     }
   }
 }
