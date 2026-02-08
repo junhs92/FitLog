@@ -34,11 +34,13 @@ class SessionRemoteDataSource {
   }
 
   /// Get sessions with optional filters
+  /// Set [asClient] to true when querying as a client (filters by client_id instead of trainer_id)
   Future<List<SessionModel>> getSessions({
     String? clientId,
     SessionStatus? status,
     DateTime? fromDate,
     DateTime? toDate,
+    bool asClient = false,
   }) async {
     final accountId = await _getCurrentAccountId();
 
@@ -54,11 +56,16 @@ class SessionRemoteDataSource {
             exercises(*),
             set_records(*)
           )
-        ''')
-        .eq('trainer_id', accountId);
+        ''');
 
-    if (clientId != null) {
-      filterQuery = filterQuery.eq('client_id', clientId);
+    // For client queries, filter by client_id; for trainer queries, filter by trainer_id
+    if (asClient) {
+      filterQuery = filterQuery.eq('client_id', accountId);
+    } else {
+      filterQuery = filterQuery.eq('trainer_id', accountId);
+      if (clientId != null) {
+        filterQuery = filterQuery.eq('client_id', clientId);
+      }
     }
 
     if (status != null) {

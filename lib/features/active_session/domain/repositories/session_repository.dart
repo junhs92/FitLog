@@ -7,12 +7,13 @@ import '../entities/session_exercise_entity.dart';
 
 /// Repository interface for session operations
 abstract class SessionRepository {
-  /// Get all sessions for the current trainer
+  /// Get all sessions for the current trainer (or current client if asClient=true)
   Future<Result<List<SessionEntity>>> getSessions({
     String? clientId,
     SessionStatus? status,
     DateTime? fromDate,
     DateTime? toDate,
+    bool asClient = false,
   });
 
   /// Get a specific session by ID

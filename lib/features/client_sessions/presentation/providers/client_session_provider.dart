@@ -146,8 +146,8 @@ final clientAllSessionsProvider = FutureProvider.family<List<SessionEntity>, Str
 
   final repository = ref.read(sessionRepositoryProvider);
 
-  // Get actual workout sessions
-  final result = await repository.getSessions(clientId: clientId);
+  // Get actual workout sessions (as client - filters by current user's client_id)
+  final result = await repository.getSessions(asClient: true);
   final workoutSessions = result.fold(
     (failure) {
       debugPrint('[ClientSessions] Failed to get workout sessions: ${failure.message}');

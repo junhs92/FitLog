@@ -20,6 +20,7 @@ class SessionRepositoryImpl implements SessionRepository {
     SessionStatus? status,
     DateTime? fromDate,
     DateTime? toDate,
+    bool asClient = false,
   }) async {
     try {
       final sessions = await _remoteDataSource.getSessions(
@@ -27,6 +28,7 @@ class SessionRepositoryImpl implements SessionRepository {
         status: status,
         fromDate: fromDate,
         toDate: toDate,
+        asClient: asClient,
       );
       return Right(sessions);
     } catch (e) {

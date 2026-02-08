@@ -1299,8 +1299,8 @@ final clientSessionHistoryProvider = FutureProvider.family<List<SessionEntity>, 
   debugPrint('🔍 [clientSessionHistoryProvider] Fetching full session history for clientId: $clientId');
   final repository = ref.read(sessionRepositoryProvider);
   final result = await repository.getSessions(
-    clientId: clientId,
     status: SessionStatus.completed,
+    asClient: true, // Query as client - filters by current user's client_id
   );
   return result.fold(
     (failure) {
