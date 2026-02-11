@@ -11,10 +11,16 @@ import '../../../muscle_map/presentation/providers/muscle_activity_provider.dart
 import '../../../muscle_map/presentation/widgets/report_muscle_map.dart';
 
 /// Read-only report detail screen for clients
+/// Can be opened with either reportId (direct) or sessionId (fetches report for session)
 class ClientReportDetailScreen extends ConsumerStatefulWidget {
-  final String reportId;
+  final String? reportId;
+  final String? sessionId;
 
-  const ClientReportDetailScreen({required this.reportId, super.key});
+  const ClientReportDetailScreen({
+    this.reportId,
+    this.sessionId,
+    super.key,
+  }) : assert(reportId != null || sessionId != null, 'Either reportId or sessionId must be provided');
 
   @override
   ConsumerState<ClientReportDetailScreen> createState() => _ClientReportDetailScreenState();
@@ -28,7 +34,11 @@ class _ClientReportDetailScreenState extends ConsumerState<ClientReportDetailScr
     super.initState();
     // Load the report when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(reportGenerationProvider.notifier).loadReport(widget.reportId);
+      if (widget.reportId != null) {
+        ref.read(reportGenerationProvider.notifier).loadReport(widget.reportId!);
+      } else if (widget.sessionId != null) {
+        ref.read(reportGenerationProvider.notifier).loadReportBySessionId(widget.sessionId!);
+      }
     });
   }
 
@@ -39,11 +49,19 @@ class _ClientReportDetailScreenState extends ConsumerState<ClientReportDetailScr
     // Mark as viewed if not already (wrapped in try-catch as clients may not have UPDATE permission)
     if (report.status != ReportStatus.viewed) {
       try {
-        ref.read(reportRepositoryProvider).markAsViewed(widget.reportId);
+        ref.read(reportRepositoryProvider).markAsViewed(report.id);
       } catch (e) {
         // Silently ignore - client may not have permission to update
         debugPrint('[ClientReport] Could not mark as viewed: $e');
       }
+    }
+  }
+
+  void _retryLoad() {
+    if (widget.reportId != null) {
+      ref.read(reportGenerationProvider.notifier).loadReport(widget.reportId!);
+    } else if (widget.sessionId != null) {
+      ref.read(reportGenerationProvider.notifier).loadReportBySessionId(widget.sessionId!);
     }
   }
 
@@ -91,9 +109,7 @@ class _ClientReportDetailScreenState extends ConsumerState<ClientReportDetailScr
             ),
             const SizedBox(height: AppSpacing.md),
             ElevatedButton(
-              onPressed: () {
-                ref.read(reportGenerationProvider.notifier).loadReport(widget.reportId);
-              },
+              onPressed: _retryLoad,
               child: const Text('Try Again'),
             ),
           ],

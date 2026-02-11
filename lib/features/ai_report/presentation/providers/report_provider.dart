@@ -101,6 +101,33 @@ class ReportGenerationNotifier extends StateNotifier<ReportGenerationState> {
     );
   }
 
+  /// Load report by session ID (for client view)
+  Future<void> loadReportBySessionId(String sessionId) async {
+    state = state.copyWith(isLoading: true, error: null);
+
+    final result = await _repository.getSessionReports(sessionId);
+
+    result.fold(
+      (failure) => state = state.copyWith(
+        isLoading: false,
+        error: failure.message,
+      ),
+      (reports) {
+        if (reports.isNotEmpty) {
+          state = state.copyWith(
+            report: reports.first,
+            isLoading: false,
+          );
+        } else {
+          state = state.copyWith(
+            isLoading: false,
+            error: 'No report available for this session',
+          );
+        }
+      },
+    );
+  }
+
   /// Update trainer comment
   Future<void> updateComment(String comment) async {
     if (state.report == null) return;

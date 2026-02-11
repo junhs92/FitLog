@@ -223,21 +223,8 @@ class _ClientSessionsScreenState extends ConsumerState<ClientSessionsScreen> {
   }
 
   void _navigateToReport(BuildContext context, SessionEntity session) {
-    // Get report for this session
-    final reportAsync = ref.read(sessionReportProvider(session.id));
-    final report = reportAsync.valueOrNull;
-
-    if (report != null) {
-      context.push('/client/report/${report.id}');
-    } else {
-      // Show message that report is not available yet
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Report not available yet'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
+    // Navigate to session report screen - it will load the report by session ID
+    context.push('/client/session-report/${session.id}');
   }
 
   void _showSessionDetailsSheet(BuildContext context, SessionEntity session) {

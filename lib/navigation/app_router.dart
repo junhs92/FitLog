@@ -364,6 +364,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
+      // Client session report route - loads report by session ID
+      GoRoute(
+        path: Routes.clientSessionReport,
+        name: RouteNames.clientSessionReport,
+        builder: (context, state) {
+          final sessionId = state.pathParameters['sessionId']!;
+          return ClientReportDetailScreen(sessionId: sessionId);
+        },
+      ),
+
       // Client invite acceptance routes (outside shell)
       GoRoute(
         path: Routes.clientAcceptInvite,
