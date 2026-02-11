@@ -7,6 +7,7 @@ import '../../../../core/theme/spacing.dart';
 import '../../../active_session/domain/entities/exercise_set_entity.dart';
 import '../../../active_session/domain/entities/session_entity.dart';
 import '../../../active_session/domain/entities/session_exercise_entity.dart';
+import '../../../active_session/domain/entities/set_comment.dart';
 
 /// Maximum number of exercises to display in the card
 const int _maxExercisesToShow = 4;
@@ -33,9 +34,6 @@ class SessionHistoryCard extends StatelessWidget {
     final totalVolume = session.savedTotalVolume ?? session.totalVolume;
     final totalSets = session.savedTotalSets ?? session.totalSetsCount;
     final prCount = session.prCount;
-
-    // Extract comments from all exercises
-    final allComments = _extractAllComments(session.exercises);
 
     return Material(
       color: Colors.transparent,
@@ -312,17 +310,6 @@ class SessionHistoryCard extends StatelessWidget {
                 ),
               ],
 
-              // Comments section
-              if (allComments.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md,
-                    0,
-                    AppSpacing.md,
-                    AppSpacing.md,
-                  ),
-                  child: _buildCommentsSection(allComments, focusColor),
-                ),
             ],
           ),
         ),
@@ -368,7 +355,7 @@ class SessionHistoryCard extends StatelessWidget {
     );
   }
 
-  /// Build a single exercise row with name and set summary
+  /// Build a single exercise row with name, set summary, and comment chips
   Widget _buildExerciseRow(
     SessionExerciseEntity exercise,
     int index,
@@ -377,6 +364,7 @@ class SessionHistoryCard extends StatelessWidget {
     final name = exercise.exercise.nameKo ?? exercise.exercise.name;
     final setSummary = _formatSetSummaryRich(exercise.sets);
     final hasPR = exercise.hasPR;
+    final comments = _extractExerciseComments(exercise);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -393,67 +381,85 @@ class SessionHistoryCard extends StatelessWidget {
               )
             : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Exercise number indicator
-          Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: hasPR
-                  ? const Color(0xFFFFD700)
-                  : accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Center(
-              child: hasPR
-                  ? const Text(
-                      '🏆',
-                      style: TextStyle(fontSize: 11),
-                    )
-                  : Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: accentColor,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Exercise name - prominent and visible
-          Expanded(
-            child: Text(
-              name,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: hasPR ? const Color(0xFFB8860B) : const Color(0xFF1F2937),
-                letterSpacing: -0.3,
+          Row(
+            children: [
+              // Exercise number indicator
+              Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: hasPR
+                      ? const Color(0xFFFFD700)
+                      : accentColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: hasPR
+                      ? const Text(
+                          '🏆',
+                          style: TextStyle(fontSize: 11),
+                        )
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: accentColor,
+                          ),
+                        ),
+                ),
               ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
+              const SizedBox(width: 10),
+              // Exercise name - prominent and visible
+              Expanded(
+                child: Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: hasPR
+                        ? const Color(0xFFB8860B)
+                        : const Color(0xFF1F2937),
+                    letterSpacing: -0.3,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Set summary - right aligned
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: hasPR
+                      ? const Color(0xFFFFD700).withValues(alpha: 0.15)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: hasPR
+                        ? const Color(0xFFFFD700).withValues(alpha: 0.3)
+                        : AppColors.neutral200,
+                    width: 1,
+                  ),
+                ),
+                child: setSummary,
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          // Set summary - right aligned
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: hasPR
-                  ? const Color(0xFFFFD700).withValues(alpha: 0.15)
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: hasPR
-                    ? const Color(0xFFFFD700).withValues(alpha: 0.3)
-                    : AppColors.neutral200,
-                width: 1,
+          // Comment chips inline below exercise name
+          if (comments.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 32, top: 6),
+              child: Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children:
+                    comments.map((c) => _buildCommentChip(c)).toList(),
               ),
             ),
-            child: setSummary,
-          ),
         ],
       ),
     );
@@ -651,103 +657,57 @@ class SessionHistoryCard extends StatelessWidget {
     return weight.toStringAsFixed(1);
   }
 
-  /// Extract all comments from exercises
-  List<String> _extractAllComments(List<SessionExerciseEntity> exercises) {
-    final comments = <String>[];
-    for (final exercise in exercises) {
-      comments.addAll(_extractComments(exercise));
-    }
-    return comments;
-  }
-
-  /// Extract comments from exercise notes JSON
-  List<String> _extractComments(SessionExerciseEntity exercise) {
+  /// Extract SetComment enums from exercise notes JSON using database keys
+  List<SetComment> _extractExerciseComments(SessionExerciseEntity exercise) {
     if (exercise.notes == null || exercise.notes!.isEmpty) return [];
 
     try {
       final json = jsonDecode(exercise.notes!);
       if (json is Map) {
-        // Try trainerComments structure
         final trainerComments = json['trainerComments'] as List?;
         if (trainerComments != null) {
           return trainerComments
-              .map((c) => c['detail'] as String?)
-              .whereType<String>()
+              .map((c) => SetCommentExtension.fromDatabaseKey(
+                  c['key'] as String? ?? ''))
+              .whereType<SetComment>()
               .toList();
         }
-        // Try simple comment field
-        final comment = json['comment'] as String?;
-        if (comment != null && comment.isNotEmpty) {
-          return [comment];
-        }
       }
-    } catch (e) {
-      // If notes is plain text, use it as-is
-      if (exercise.notes!.trim().isNotEmpty) {
-        return [exercise.notes!];
-      }
+    } catch (_) {
+      // Not valid JSON – no comments to extract
     }
     return [];
   }
 
-  /// Build comments section
-  Widget _buildCommentsSection(List<String> comments, Color accentColor) {
-    // Show only first comment to keep card compact
-    final displayComment = comments.first;
-    final moreCount = comments.length - 1;
+  /// Build a small colored chip for a single SetComment
+  Widget _buildCommentChip(SetComment comment) {
+    final Color chipColor;
+    switch (comment.category) {
+      case SetCommentCategory.mistake:
+        chipColor = AppColors.warning;
+      case SetCommentCategory.coachingCue:
+        chipColor = AppColors.primary;
+      case SetCommentCategory.condition:
+        chipColor = AppColors.success;
+    }
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.neutral100,
-        borderRadius: BorderRadius.circular(10),
+        color: chipColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: chipColor.withValues(alpha: 0.3),
+          width: 0.5,
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.chat_bubble_rounded,
-              size: 14,
-              color: accentColor,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayComment,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.neutral800,
-                    height: 1.4,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (moreCount > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '외 $moreCount개 코멘트',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      color: accentColor,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+      child: Text(
+        comment.shortDisplayName,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: chipColor.withValues(alpha: 0.9),
+        ),
       ),
     );
   }
