@@ -8,6 +8,8 @@ import '../../../../core/utils/responsive_utils.dart';
 import '../../../../shared/widgets/common/error_view.dart';
 import '../../../../shared/widgets/common/loading_indicator.dart';
 import '../../../active_session/presentation/widgets/program_selection_sheet.dart';
+import '../../../calendar/domain/entities/session_package.dart';
+import '../../../calendar/presentation/providers/calendar_provider.dart';
 import '../../../trainer_home/presentation/providers/trainer_home_provider.dart';
 import '../../domain/entities/client_entity.dart';
 import '../providers/client_provider.dart';
@@ -15,7 +17,8 @@ import '../widgets/client_detail_content.dart';
 
 /// Master-detail layout for clients on tablet/desktop screens.
 /// Shows client list on left panel and detail view on right panel
-/// with Apple-style smooth transitions.
+/// with Apple-style smooth transitions. The master panel collapses
+/// to a mini avatar strip when a client is selected.
 class ClientsMasterDetailScreen extends ConsumerStatefulWidget {
   const ClientsMasterDetailScreen({super.key});
 
@@ -53,6 +56,8 @@ class _ClientsMasterDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    final isCollapsed = ref.watch(masterPanelCollapsedProvider);
+
     return Scaffold(
       body: Row(
         children: [
@@ -61,6 +66,14 @@ class _ClientsMasterDetailScreenState
             selectionScale: _selectionScale,
             onSelectionStart: () => _selectionController.forward(),
             onSelectionEnd: () => _selectionController.reverse(),
+            isCollapsed: isCollapsed,
+            onToggleCollapse: () {
+              ref.read(masterPanelCollapsedProvider.notifier).state =
+                  !isCollapsed;
+            },
+            onClientTapCollapse: () {
+              ref.read(masterPanelCollapsedProvider.notifier).state = true;
+            },
           ),
 
           // Divider with subtle shadow
@@ -88,107 +101,191 @@ class _ClientsMasterDetailScreenState
   }
 }
 
-/// Master panel showing the client list with search and selection
+/// Master panel showing the client list with search and selection.
+/// Supports collapsing to a narrow mini-avatar strip.
 class _MasterPanel extends ConsumerWidget {
   final Animation<double> selectionScale;
   final VoidCallback onSelectionStart;
   final VoidCallback onSelectionEnd;
+  final bool isCollapsed;
+  final VoidCallback onToggleCollapse;
+  final VoidCallback onClientTapCollapse;
 
   const _MasterPanel({
     required this.selectionScale,
     required this.onSelectionStart,
     required this.onSelectionEnd,
+    required this.isCollapsed,
+    required this.onToggleCollapse,
+    required this.onClientTapCollapse,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final clientsAsync = ref.watch(filteredClientsProvider);
-    final searchQuery = ref.watch(clientSearchQueryProvider);
-    final selectedClientId = ref.watch(selectedClientIdProvider);
-
-    final panelWidth = ResponsiveBreakpoints.getMasterPanelWidth(context);
+    final expandedWidth = ResponsiveBreakpoints.getMasterPanelWidth(context);
+    const collapsedWidth = ResponsiveBreakpoints.railWidth;
+    final panelWidth = isCollapsed ? collapsedWidth : expandedWidth;
 
     return AnimatedContainer(
       duration: ResponsiveAnimations.panelResize,
       curve: ResponsiveAnimations.springCurve,
       width: panelWidth,
-      child: Column(
-        children: [
-          // Header with title and actions
-          _buildHeader(context, ref),
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(),
+      child: AnimatedSwitcher(
+        duration: ResponsiveAnimations.contentFade,
+        switchInCurve: ResponsiveAnimations.fadeCurve,
+        switchOutCurve: ResponsiveAnimations.fadeCurve,
+        child: isCollapsed
+            ? _buildCollapsedContent(context, ref)
+            : _buildExpandedContent(context, ref),
+      ),
+    );
+  }
 
-          // Search indicator
-          if (searchQuery.isNotEmpty)
-            _buildSearchIndicator(context, ref, searchQuery),
+  Widget _buildExpandedContent(BuildContext context, WidgetRef ref) {
+    final clientsAsync = ref.watch(filteredClientsProvider);
+    final searchQuery = ref.watch(clientSearchQueryProvider);
+    final selectedClientId = ref.watch(selectedClientIdProvider);
 
-          // Client list
-          Expanded(
-            child: clientsAsync.when(
-              data: (clients) {
-                if (clients.isEmpty) {
-                  return _buildEmptyState(context, searchQuery.isNotEmpty);
-                }
+    return Column(
+      key: const ValueKey('expanded'),
+      children: [
+        // Header with title and actions
+        _buildHeader(context, ref),
 
-                // Auto-select first client if none selected (tablet UX)
-                if (selectedClientId == null && clients.isNotEmpty) {
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    ref.read(selectedClientIdProvider.notifier).state =
-                        clients.first.id;
-                  });
-                }
+        // Search indicator
+        if (searchQuery.isNotEmpty)
+          _buildSearchIndicator(context, ref, searchQuery),
 
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(clientsProvider);
+        // Client list
+        Expanded(
+          child: clientsAsync.when(
+            data: (clients) {
+              if (clients.isEmpty) {
+                return _buildEmptyState(context, searchQuery.isNotEmpty);
+              }
+
+              // Auto-select first client if none selected (tablet UX)
+              // Does NOT collapse the panel on auto-select
+              if (selectedClientId == null && clients.isNotEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  ref.read(selectedClientIdProvider.notifier).state =
+                      clients.first.id;
+                });
+              }
+
+              return RefreshIndicator(
+                onRefresh: () async {
+                  ref.invalidate(clientsProvider);
+                },
+                child: ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  itemCount: clients.length,
+                  itemBuilder: (context, index) {
+                    final client = clients[index];
+                    final isSelected = client.id == selectedClientId;
+
+                    return _SelectableClientTile(
+                      client: client,
+                      isSelected: isSelected,
+                      selectionScale: selectionScale,
+                      onTap: () {
+                        onSelectionStart();
+                        ref.read(selectedClientIdProvider.notifier).state =
+                            client.id;
+                        Future.delayed(
+                          ResponsiveAnimations.selectionFeedback,
+                          onSelectionEnd,
+                        );
+                        // Collapse panel after selecting a client
+                        onClientTapCollapse();
+                      },
+                      onSessionTap: () {
+                        final trainerIdAsync = ref.read(trainerIdProvider);
+                        final trainerId = trainerIdAsync.valueOrNull ?? '';
+                        ProgramSelectionSheet.show(
+                          context: context,
+                          ref: ref,
+                          clientId: client.id,
+                          clientName: client.name,
+                          trainerId: trainerId,
+                        );
+                      },
+                    );
                   },
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                    itemCount: clients.length,
-                    itemBuilder: (context, index) {
-                      final client = clients[index];
-                      final isSelected = client.id == selectedClientId;
+                ),
+              );
+            },
+            loading: () => const LoadingIndicator(),
+            error: (error, _) => ErrorView(
+              message: error.toString(),
+              onRetry: () => ref.invalidate(clientsProvider),
+            ),
+          ),
+        ),
 
-                      return _SelectableClientTile(
-                        client: client,
-                        isSelected: isSelected,
-                        selectionScale: selectionScale,
-                        onTap: () {
-                          onSelectionStart();
-                          ref.read(selectedClientIdProvider.notifier).state =
-                              client.id;
-                          Future.delayed(
-                            ResponsiveAnimations.selectionFeedback,
-                            onSelectionEnd,
-                          );
-                        },
-                        onSessionTap: () {
-                          final trainerIdAsync = ref.read(trainerIdProvider);
-                          final trainerId = trainerIdAsync.valueOrNull ?? '';
-                          ProgramSelectionSheet.show(
-                            context: context,
-                            ref: ref,
-                            clientId: client.id,
-                            clientName: client.name,
-                            trainerId: trainerId,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                );
-              },
-              loading: () => const LoadingIndicator(),
-              error: (error, _) => ErrorView(
-                message: error.toString(),
-                onRetry: () => ref.invalidate(clientsProvider),
+        // Add client FAB
+        _buildAddClientButton(context),
+      ],
+    );
+  }
+
+  Widget _buildCollapsedContent(BuildContext context, WidgetRef ref) {
+    final clientsAsync = ref.watch(filteredClientsProvider);
+    final selectedClientId = ref.watch(selectedClientIdProvider);
+
+    return Column(
+      key: const ValueKey('collapsed'),
+      children: [
+        // Collapsed header with expand button
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            border: const Border(
+              bottom: BorderSide(color: AppColors.neutral200),
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+              child: Center(
+                child: IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  tooltip: 'Expand panel',
+                  onPressed: onToggleCollapse,
+                ),
               ),
             ),
           ),
+        ),
 
-          // Add client FAB
-          _buildAddClientButton(context),
-        ],
-      ),
+        // Mini avatar list
+        Expanded(
+          child: clientsAsync.when(
+            data: (clients) => ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              itemCount: clients.length,
+              itemBuilder: (context, index) {
+                final client = clients[index];
+                final isSelected = client.id == selectedClientId;
+
+                return _MiniClientAvatar(
+                  client: client,
+                  isSelected: isSelected,
+                  onTap: () {
+                    ref.read(selectedClientIdProvider.notifier).state =
+                        client.id;
+                  },
+                );
+              },
+            ),
+            loading: () => const LoadingIndicator(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
   }
 
@@ -197,7 +294,7 @@ class _MasterPanel extends ConsumerWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        border: Border(
+        border: const Border(
           bottom: BorderSide(color: AppColors.neutral200),
         ),
       ),
@@ -212,6 +309,11 @@ class _MasterPanel extends ConsumerWidget {
                   ),
             ),
             const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              tooltip: 'Collapse panel',
+              onPressed: onToggleCollapse,
+            ),
             IconButton(
               icon: const Icon(Icons.person_search),
               tooltip: 'Connect with Client',
@@ -413,8 +515,71 @@ class _MasterPanel extends ConsumerWidget {
   }
 }
 
+/// Mini client avatar for the collapsed panel strip
+class _MiniClientAvatar extends StatelessWidget {
+  final ClientEntity client;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _MiniClientAvatar({
+    required this.client,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+      child: Center(
+        child: Tooltip(
+          message: client.name,
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: AnimatedContainer(
+              duration: ResponsiveAnimations.selectionFeedback,
+              curve: ResponsiveAnimations.selectionCurve,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: _buildAvatar(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    if (client.profilePhotoUrl != null) {
+      return CircleAvatar(
+        radius: 16,
+        backgroundImage: NetworkImage(client.profilePhotoUrl!),
+      );
+    }
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+      child: Text(
+        client.initials,
+        style: const TextStyle(
+          color: AppColors.primary,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+      ),
+    );
+  }
+}
+
 /// Selectable client tile with animation for master panel
-class _SelectableClientTile extends StatelessWidget {
+class _SelectableClientTile extends ConsumerWidget {
   final ClientEntity client;
   final bool isSelected;
   final Animation<double> selectionScale;
@@ -430,7 +595,7 @@ class _SelectableClientTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return AnimatedBuilder(
       animation: selectionScale,
       builder: (context, child) {
@@ -493,6 +658,7 @@ class _SelectableClientTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        _buildSessionsBadge(ref),
                       ],
                     ),
                   ),
@@ -511,6 +677,52 @@ class _SelectableClientTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSessionsBadge(WidgetRef ref) {
+    final packageAsync = ref.watch(
+      clientSessionPackageProvider(client.id),
+    );
+
+    return packageAsync.when(
+      data: (package) {
+        if (package == null) return const SizedBox.shrink();
+
+        final remaining = package.sessionsRemaining;
+        final total = package.totalSessions;
+        final warningLevel = package.warningLevel;
+
+        Color textColor;
+        switch (warningLevel) {
+          case PackageWarningLevel.critical:
+          case PackageWarningLevel.expired:
+            textColor = AppColors.error;
+            break;
+          case PackageWarningLevel.low:
+            textColor = AppColors.warning;
+            break;
+          case PackageWarningLevel.none:
+            textColor = AppColors.neutral700;
+            break;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            remaining <= 0
+                ? '남은 세션 없음'
+                : '남은 세션: $remaining / $total회',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: textColor,
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 

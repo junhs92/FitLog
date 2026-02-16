@@ -206,6 +206,9 @@ final clientSearchQueryProvider = StateProvider<String>((ref) => '');
 // Stores the currently selected client ID in the master list
 final selectedClientIdProvider = StateProvider<String?>((ref) => null);
 
+// Master panel collapsed state for tablet/desktop master-detail layout
+final masterPanelCollapsedProvider = StateProvider<bool>((ref) => false);
+
 // Selected client entity provider (derived from selectedClientIdProvider)
 final selectedClientProvider = Provider.autoDispose<AsyncValue<ClientEntity?>>((ref) {
   final selectedId = ref.watch(selectedClientIdProvider);

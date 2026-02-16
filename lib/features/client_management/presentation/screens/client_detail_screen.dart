@@ -16,7 +16,7 @@ import '../../../trainer_home/presentation/providers/trainer_home_provider.dart'
 import '../../domain/entities/client_entity.dart';
 import '../providers/client_provider.dart';
 import '../widgets/client_form.dart';
-import '../widgets/lifestyle_summary_card.dart';
+import '../widgets/exercise_recommendation_card.dart';
 import '../widgets/recent_sessions_card.dart';
 
 /// Screen for viewing and editing client details
@@ -164,17 +164,7 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                     height: 48,
                     child: FloatingActionButton.extended(
                       heroTag: 'session_fab',
-                      onPressed: () {
-                        final trainerIdAsync = ref.read(trainerIdProvider);
-                        final trainerId = trainerIdAsync.valueOrNull ?? '';
-                        ProgramSelectionSheet.show(
-                          context: context,
-                          ref: ref,
-                          clientId: widget.clientId,
-                          clientName: client.name,
-                          trainerId: trainerId,
-                        );
-                      },
+                      onPressed: () => _handleStartSession(context, client),
                       icon: const Icon(Icons.play_arrow),
                       label: const Text('세션 시작'),
                     ),
@@ -245,8 +235,8 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
           ),
           const SizedBox(height: AppSpacing.xl),
 
-          // 7-Day Lifestyle Summary (Flow 0)
-          LifestyleSummaryCard(clientId: widget.clientId),
+          // Exercise Recommendations (Pre-Session Planning)
+          ExerciseRecommendationCard(clientId: widget.clientId),
           const SizedBox(height: AppSpacing.xl),
 
           // 7-Day Muscle Activity Map (Pre-Session Planning)
@@ -480,6 +470,53 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
       context,
       initialClientId: widget.clientId,
       initialDate: DateTime.now(),
+    );
+  }
+
+  void _handleStartSession(BuildContext context, ClientEntity client) {
+    final package =
+        ref.read(clientSessionPackageProvider(widget.clientId)).valueOrNull;
+    if (package != null && package.sessionsRemaining <= 0) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('세션 잔여 횟수 부족'),
+          content: const Text(
+            '남은 세션이 0회입니다. 그래도 세션을 시작하시겠습니까?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                final trainerIdAsync = ref.read(trainerIdProvider);
+                final trainerId = trainerIdAsync.valueOrNull ?? '';
+                ProgramSelectionSheet.show(
+                  context: context,
+                  ref: ref,
+                  clientId: widget.clientId,
+                  clientName: client.name,
+                  trainerId: trainerId,
+                );
+              },
+              child: const Text('시작'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final trainerIdAsync = ref.read(trainerIdProvider);
+    final trainerId = trainerIdAsync.valueOrNull ?? '';
+    ProgramSelectionSheet.show(
+      context: context,
+      ref: ref,
+      clientId: widget.clientId,
+      clientName: client.name,
+      trainerId: trainerId,
     );
   }
 

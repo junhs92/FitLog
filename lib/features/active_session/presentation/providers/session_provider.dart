@@ -27,6 +27,7 @@ import '../../domain/entities/detected_achievement.dart';
 import '../../../client_management/presentation/providers/client_provider.dart';
 import '../../../ai_workout/presentation/providers/ai_workout_provider.dart';
 import '../../../ai_workout/domain/entities/workout_program.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 
 /// Provider for Supabase client
 final supabaseClientProvider = Provider<SupabaseClient>((ref) {
@@ -610,6 +611,43 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       state = state.copyWith(isLoading: false, error: e.toString());
       return false;
     }
+  }
+
+  /// Remove exercise at given index from active session
+  Future<bool> removeExercise(int index) async {
+    final exercises = state.session?.exercises;
+    if (exercises == null || exercises.length <= 1) return false;
+    if (index < 0 || index >= exercises.length) return false;
+
+    state = state.copyWith(isLoading: true);
+
+    final result =
+        await _repository.removeExerciseFromSession(exercises[index].id);
+
+    return result.fold(
+      (failure) {
+        state = state.copyWith(isLoading: false, error: failure.message);
+        return false;
+      },
+      (_) {
+        final updatedExercises = List<SessionExerciseEntity>.from(exercises)
+          ..removeAt(index);
+        final updatedSession =
+            state.session!.copyWith(exercises: updatedExercises);
+
+        // Adjust current index
+        int newIndex = state.currentExerciseIndex;
+        if (index < newIndex) {
+          newIndex--;
+        } else if (index == newIndex) {
+          newIndex = newIndex.clamp(0, updatedExercises.length - 1);
+        }
+
+        state = state.copyWith(session: updatedSession, isLoading: false);
+        goToExercise(newIndex);
+        return true;
+      },
+    );
   }
 
   /// Log current set and return true if successful
@@ -1295,13 +1333,25 @@ final clientRecentSessionsProvider = FutureProvider.family<List<SessionEntity>, 
 
 /// Provider for client's full session history (for History tab in Stats screen)
 /// Returns all completed sessions, ordered by completion date (newest first)
+/// Branches based on whether the current user IS the client (viewing own history)
+/// or a trainer viewing a client's history.
 final clientSessionHistoryProvider = FutureProvider.family<List<SessionEntity>, String>((ref, clientId) async {
   debugPrint('🔍 [clientSessionHistoryProvider] Fetching full session history for clientId: $clientId');
   final repository = ref.read(sessionRepositoryProvider);
-  final result = await repository.getSessions(
-    status: SessionStatus.completed,
-    asClient: true, // Query as client - filters by current user's client_id
-  );
+  final user = ref.read(authStateProvider).value;
+  final isOwnHistory = user != null && user.id == clientId;
+  debugPrint('🔍 [clientSessionHistoryProvider] currentUserId: ${user?.id}, clientId: $clientId, isOwnHistory: $isOwnHistory');
+
+  final result = isOwnHistory
+      ? await repository.getSessions(
+          status: SessionStatus.completed,
+          asClient: true, // Client viewing own history → client_id = account_id
+        )
+      : await repository.getSessions(
+          clientId: clientId,
+          status: SessionStatus.completed,
+          // Trainer viewing client → trainer_id = account_id AND client_id = clientId
+        );
   return result.fold(
     (failure) {
       debugPrint('🔴 [clientSessionHistoryProvider] Error: ${failure.message}');
@@ -1442,7 +1492,7 @@ final exerciseRecommendationsProvider = FutureProvider.family<ExerciseRecommenda
     focusAreas: focusAreas,
     trainingSplit: trainingSplit,
     suggestedNextFocus: suggestedNextFocus,
-    limit: 10,
+    limit: 999,
   );
   debugPrint('🟢 [exerciseRecommendationsProvider] Top recommendations: ${recommendations.take(3).map((r) => r.exercise.name).join(", ")}');
 
@@ -1450,6 +1500,75 @@ final exerciseRecommendationsProvider = FutureProvider.family<ExerciseRecommenda
     recommendations: recommendations,
     recommendedGroupOrder: groupOrder,
   );
+});
+
+/// Data class for client detail screen recommendation display
+class FamilyRecommendationItem {
+  final ScoredFamily family;
+  final List<String> detailedReasons;
+  const FamilyRecommendationItem({
+    required this.family,
+    required this.detailedReasons,
+  });
+}
+
+/// Client recommended families provider for client detail screen
+/// Returns top 5 families with detailed reason lists
+/// Parameters: clientId
+final clientRecommendedFamiliesProvider =
+    FutureProvider.family<List<FamilyRecommendationItem>, String>(
+        (ref, clientId) async {
+  final recsState =
+      await ref.watch(exerciseRecommendationsProvider(clientId).future);
+  final service = ref.read(exerciseRecommendationServiceProvider);
+  final exercises = await ref.read(exerciseLibraryProvider(null).future);
+
+  // Get context data for detailed reasons
+  List<String> clientGoals = ['general'];
+  try {
+    final client = await ref.read(clientProvider(clientId).future);
+    if (client.goals.isNotEmpty) clientGoals = client.goals;
+  } catch (_) {}
+
+  TrainingSplit? trainingSplit;
+  String? suggestedNextFocus;
+  List<String>? preferredMovementGroups;
+  List<String>? focusAreas;
+  try {
+    final program =
+        await ref.read(activeProgramProvider(clientId).future);
+    if (program != null) {
+      trainingSplit = program.trainingSplit;
+      suggestedNextFocus = program.suggestedNextFocus;
+      preferredMovementGroups = program.preferredMovementGroups;
+      focusAreas = program.focusAreas;
+    }
+  } catch (_) {}
+
+  final recentSessions =
+      await ref.read(clientRecentSessionsProvider(clientId).future);
+
+  // Aggregate to families
+  final families = service.aggregateToFamilyScores(
+    scoredExercises: recsState.recommendations,
+    allExercises: exercises,
+    exerciseIdsInSession: {},
+  );
+
+  // Build items with detailed reasons for top 5
+  return families.take(5).map((family) {
+    final reasons = service.getDetailedReasons(
+      movementGroup: family.movementGroup,
+      clientGoals: clientGoals,
+      recentSessions: recentSessions,
+      trainingSplit: trainingSplit,
+      suggestedNextFocus: suggestedNextFocus,
+      preferredMovementGroups: preferredMovementGroups,
+      focusAreas: focusAreas,
+    );
+    return FamilyRecommendationItem(
+        family: family, detailedReasons: reasons);
+  }).toList();
 });
 
 /// Contextual recommendations provider for exercise picker

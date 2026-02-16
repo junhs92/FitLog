@@ -778,6 +778,96 @@ class ExerciseRecommendationService {
     }
   }
 
+  /// Generate detailed, user-friendly reason list for a movement group.
+  /// Unlike _getReasonForGroup() which returns one label, this collects
+  /// ALL applicable reasons as readable Korean sentences.
+  List<String> getDetailedReasons({
+    required String movementGroup,
+    required List<String> clientGoals,
+    required List<SessionEntity> recentSessions,
+    TrainingSplit? trainingSplit,
+    String? suggestedNextFocus,
+    List<String>? preferredMovementGroups,
+    List<String>? focusAreas,
+  }) {
+    final reasons = <String>[];
+
+    // 1. Training split rotation
+    if (trainingSplit != null && suggestedNextFocus != null) {
+      final focusGroups = _splitFocusToGroups[suggestedNextFocus] ?? [];
+      if (focusGroups.contains(movementGroup)) {
+        switch (trainingSplit) {
+          case TrainingSplit.upperLower:
+            reasons.add(suggestedNextFocus == 'upper'
+                ? '상/하 분할 루틴에 따라 오늘은 상체 운동일입니다'
+                : '상/하 분할 루틴에 따라 오늘은 하체 운동일입니다');
+          case TrainingSplit.pushPullLegs:
+            if (suggestedNextFocus == 'push') {
+              reasons.add('PPL 루틴에 따라 오늘은 밀기 운동일입니다');
+            } else if (suggestedNextFocus == 'pull') {
+              reasons.add('PPL 루틴에 따라 오늘은 당기기 운동일입니다');
+            } else {
+              reasons.add('PPL 루틴에 따라 오늘은 하체 운동일입니다');
+            }
+          case TrainingSplit.fullBody:
+            reasons.add('전신 균형 훈련을 위해 추천됩니다');
+        }
+      }
+    }
+
+    // 2. Recent session avoidance / balance
+    final recentGroups = _getRecentGroups(recentSessions);
+    if (!recentGroups.contains(movementGroup) && recentSessions.isNotEmpty) {
+      reasons.add('최근 세션에서 훈련하지 않아 균형 잡힌 발달에 도움이 됩니다');
+    }
+
+    // 3. Goal alignment
+    for (final goal in clientGoals) {
+      final goalGroups = _goalToGroups[goal] ?? [];
+      if (goalGroups.contains(movementGroup)) {
+        switch (goal) {
+          case 'strength':
+            reasons.add('근력 향상 목표에 효과적인 운동 그룹입니다');
+          case 'hypertrophy':
+            reasons.add('근비대 목표에 최적화된 운동 그룹입니다');
+          case 'weight_loss':
+            reasons.add('체지방 감소 목표에 도움이 되는 운동입니다');
+          case 'endurance':
+            reasons.add('지구력 향상에 적합한 운동 그룹입니다');
+          case 'mobility':
+            reasons.add('유연성 및 가동성 개선에 도움됩니다');
+          default:
+            reasons.add('전반적인 체력 향상에 기여합니다');
+        }
+        break; // Only add one goal reason
+      }
+    }
+
+    // 4. Program preferred movement groups
+    if (preferredMovementGroups != null &&
+        preferredMovementGroups.contains(movementGroup)) {
+      reasons.add('현재 프로그램의 선호 동작 그룹에 포함됩니다');
+    }
+
+    // 5. Focus area targeting
+    if (focusAreas != null && focusAreas.isNotEmpty) {
+      for (final focus in focusAreas) {
+        final groups = _focusAreaToGroups[focus.toLowerCase()] ?? [];
+        if (groups.contains(movementGroup)) {
+          reasons.add('프로그램 집중 부위($focus)를 타겟하는 운동입니다');
+          break;
+        }
+      }
+    }
+
+    // Fallback if no specific reasons found
+    if (reasons.isEmpty) {
+      reasons.add('${_getGroupDescription(movementGroup)} 그룹으로 추천됩니다');
+    }
+
+    return reasons;
+  }
+
   // ============================================================
   // CONTEXTUAL RECOMMENDATIONS (Exercise Picker)
   // ============================================================
@@ -1202,6 +1292,155 @@ class ExerciseRecommendationService {
         return muscle;
     }
   }
+
+  /// Aggregate exercise-level scores to family-level scores for the hierarchical picker.
+  /// Uses max-score strategy: one good exercise surfaces the entire family.
+  /// Also boosts families that appear in contextual recommendations.
+  List<ScoredFamily> aggregateToFamilyScores({
+    required List<RecommendedExercise> scoredExercises,
+    ContextualRecommendationsState? contextualRecs,
+    required List<ExerciseEntity> allExercises,
+    required Set<String> exerciseIdsInSession,
+  }) {
+    // Group exercises by family (null family = individual entries)
+    final familyGroups = <String, List<RecommendedExercise>>{};
+    final ungrouped = <RecommendedExercise>[];
+
+    for (final scored in scoredExercises) {
+      // Skip exercises already in session
+      if (exerciseIdsInSession.contains(scored.exercise.id)) continue;
+
+      final family = scored.exercise.family;
+      if (family != null && family.isNotEmpty) {
+        familyGroups.putIfAbsent(family, () => []).add(scored);
+      } else {
+        ungrouped.add(scored);
+      }
+    }
+
+    // Build contextual recommendation exercise IDs for boosting
+    final contextualExerciseIds = <String>{};
+    if (contextualRecs != null) {
+      for (final rec in contextualRecs.complementary) {
+        contextualExerciseIds.add(rec.exercise.id);
+      }
+      for (final rec in contextualRecs.supplementary) {
+        contextualExerciseIds.add(rec.exercise.id);
+      }
+    }
+
+    final families = <ScoredFamily>[];
+
+    // Score each family using max-score strategy
+    for (final entry in familyGroups.entries) {
+      final familyKey = entry.key;
+      final exercises = entry.value;
+
+      // Max score among exercises in this family
+      double maxScore = 0;
+      String bestReason = '';
+      for (final ex in exercises) {
+        if (ex.score > maxScore) {
+          maxScore = ex.score;
+          bestReason = ex.reason;
+        }
+      }
+
+      // Boost if any exercise in this family appears in contextual recs
+      bool hasContextualRec = false;
+      RecommendationType? contextualType;
+      for (final ex in exercises) {
+        if (contextualExerciseIds.contains(ex.exercise.id)) {
+          hasContextualRec = true;
+          // Determine type
+          if (contextualRecs != null) {
+            for (final rec in contextualRecs.complementary) {
+              if (rec.exercise.id == ex.exercise.id) {
+                contextualType = RecommendationType.complementary;
+                break;
+              }
+            }
+            contextualType ??= RecommendationType.supplementary;
+          }
+          maxScore += 30;
+          break;
+        }
+      }
+
+      // Get all exercises in this family (including those already in session, for count)
+      final totalInFamily = allExercises.where((e) => e.family == familyKey).length;
+
+      // Representative exercise (highest scored)
+      final representative = exercises.reduce(
+        (a, b) => a.score >= b.score ? a : b,
+      ).exercise;
+
+      families.add(ScoredFamily(
+        familyKey: familyKey,
+        displayNameKo: ExerciseFamily.getDisplayNameKo(familyKey),
+        score: maxScore,
+        reason: bestReason,
+        exerciseCount: totalInFamily,
+        availableCount: exercises.length,
+        movementGroup: representative.movementGroup,
+        muscleGroup: representative.muscleGroup,
+        isCustom: false,
+        hasContextualRecommendation: hasContextualRec,
+        contextualType: contextualType,
+      ));
+    }
+
+    // Add ungrouped exercises as single-exercise families
+    for (final scored in ungrouped) {
+      families.add(ScoredFamily(
+        familyKey: scored.exercise.id, // Use exercise ID as key
+        displayNameKo: scored.exercise.displayName,
+        score: scored.score,
+        reason: scored.reason,
+        exerciseCount: 1,
+        availableCount: 1,
+        movementGroup: scored.exercise.movementGroup,
+        muscleGroup: scored.exercise.muscleGroup,
+        isCustom: scored.exercise.isCustom,
+        hasContextualRecommendation: contextualExerciseIds.contains(scored.exercise.id),
+        contextualType: null,
+      ));
+    }
+
+    // Sort by score descending
+    families.sort((a, b) => b.score.compareTo(a.score));
+
+    return families;
+  }
+}
+
+/// A scored family for the hierarchical picker
+class ScoredFamily {
+  final String familyKey;
+  final String displayNameKo;
+  final double score;
+  final String reason;
+  final int exerciseCount; // Total exercises in family
+  final int availableCount; // Exercises not yet in session
+  final String movementGroup;
+  final String? muscleGroup;
+  final bool isCustom;
+  final bool hasContextualRecommendation;
+  final RecommendationType? contextualType;
+
+  const ScoredFamily({
+    required this.familyKey,
+    required this.displayNameKo,
+    required this.score,
+    required this.reason,
+    required this.exerciseCount,
+    required this.availableCount,
+    required this.movementGroup,
+    this.muscleGroup,
+    this.isCustom = false,
+    this.hasContextualRecommendation = false,
+    this.contextualType,
+  });
 }
 
 /// Internal helper for scoring with label

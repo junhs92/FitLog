@@ -275,13 +275,19 @@ final selectedDaySchedulesProvider = Provider<List<ScheduleEntry>>((ref) {
   return schedules;
 });
 
-/// Client's active session package
+/// Client's active session package (includes depleted packages for display)
 final clientSessionPackageProvider = FutureProvider.family<SessionPackage?, String>((ref, clientId) async {
   final repository = ref.watch(sessionPackageRepositoryProvider);
   if (repository == null) return null;
 
+  // First try to get an active package with remaining sessions
   final result = await repository.getActivePackage(clientId);
-  return result.fold((_) => null, (package) => package);
+  final activePackage = result.fold((_) => null, (package) => package);
+  if (activePackage != null) return activePackage;
+
+  // Fall back to the most recent active package (even if depleted) for display
+  final allResult = await repository.getClientPackages(clientId: clientId);
+  return allResult.fold((_) => null, (packages) => packages.isNotEmpty ? packages.last : null);
 });
 
 /// Quick check for remaining sessions

@@ -8,6 +8,7 @@ class ExerciseEntity {
   final String? movementDetail;
   final String? family;
   final String? angle;
+  final String? gripOrientation;
   final String? equipment;
   final String? muscleGroup;
   final List<String> secondaryMuscles;
@@ -30,6 +31,7 @@ class ExerciseEntity {
     this.movementDetail,
     this.family,
     this.angle,
+    this.gripOrientation,
     this.equipment,
     this.muscleGroup,
     this.secondaryMuscles = const [],
@@ -74,6 +76,7 @@ class ExerciseEntity {
     String? movementDetail,
     String? family,
     String? angle,
+    String? gripOrientation,
     String? equipment,
     String? muscleGroup,
     List<String>? secondaryMuscles,
@@ -96,6 +99,7 @@ class ExerciseEntity {
       movementDetail: movementDetail ?? this.movementDetail,
       family: family ?? this.family,
       angle: angle ?? this.angle,
+      gripOrientation: gripOrientation ?? this.gripOrientation,
       equipment: equipment ?? this.equipment,
       muscleGroup: muscleGroup ?? this.muscleGroup,
       secondaryMuscles: secondaryMuscles ?? this.secondaryMuscles,
@@ -256,15 +260,17 @@ class MovementDetail {
   }
 }
 
-/// Exercise angle (for bench exercises)
+/// Exercise angle (for bench exercises and cable pulley positions)
 class ExerciseAngle {
   static const String flat = 'flat';
   static const String incline = 'incline';
   static const String decline = 'decline';
+  static const String high = 'high';
+  static const String low = 'low';
   static const String neutral = 'neutral';
   static const String na = 'na';
 
-  static const List<String> all = [flat, incline, decline, neutral, na];
+  static const List<String> all = [flat, incline, decline, high, low, neutral, na];
 
   static String getDisplayName(String angle) {
     switch (angle) {
@@ -274,6 +280,10 @@ class ExerciseAngle {
         return 'Incline';
       case decline:
         return 'Decline';
+      case high:
+        return 'High';
+      case low:
+        return 'Low';
       case neutral:
         return 'Neutral';
       case na:
@@ -291,12 +301,214 @@ class ExerciseAngle {
         return '인클라인';
       case decline:
         return '디클라인';
+      case high:
+        return '하이';
+      case low:
+        return '로우';
       case neutral:
         return '중립';
       case na:
         return '해당없음';
       default:
         return angle;
+    }
+  }
+}
+
+/// Grip orientation for exercise variation filtering
+class GripOrientation {
+  static const String overhand = 'overhand';
+  static const String underhand = 'underhand';
+  static const String neutral = 'neutral';
+  static const String mixed = 'mixed';
+  static const String rotating = 'rotating';
+  static const String na = 'na';
+
+  static const List<String> all = [overhand, underhand, neutral, mixed, rotating, na];
+
+  /// Filterable values (exclude 'na' from user-facing filters)
+  static const List<String> filterable = [overhand, underhand, neutral, mixed, rotating];
+
+  static String getDisplayName(String grip) {
+    switch (grip) {
+      case overhand:
+        return 'Overhand';
+      case underhand:
+        return 'Underhand';
+      case neutral:
+        return 'Neutral';
+      case mixed:
+        return 'Mixed';
+      case rotating:
+        return 'Rotating';
+      case na:
+        return 'N/A';
+      default:
+        return grip;
+    }
+  }
+
+  static String getDisplayNameKo(String grip) {
+    switch (grip) {
+      case overhand:
+        return '오버핸드';
+      case underhand:
+        return '언더핸드';
+      case neutral:
+        return '뉴트럴';
+      case mixed:
+        return '믹스드';
+      case rotating:
+        return '로테이팅';
+      case na:
+        return '해당없음';
+      default:
+        return grip;
+    }
+  }
+}
+
+/// Exercise family constants with Korean display names
+/// Each family groups similar exercise variations (e.g., all bench press variants)
+class ExerciseFamily {
+  // Chest
+  static const String benchPress = 'bench_press';
+  static const String fly = 'fly';
+  static const String pushup = 'pushup';
+  static const String pullover = 'pullover';
+
+  // Shoulders
+  static const String overheadPress = 'overhead_press';
+  static const String lateralRaise = 'lateral_raise';
+  static const String frontRaise = 'front_raise';
+  static const String rearDelt = 'rear_delt';
+  static const String yRaise = 'y_raise';
+  static const String shrug = 'shrug';
+  static const String uprightRow = 'upright_row';
+  static const String shoulderMobility = 'shoulder_mobility';
+
+  // Triceps
+  static const String dip = 'dip';
+  static const String tricepExtension = 'tricep_extension';
+  static const String jmPress = 'jm_press';
+  static const String tatePress = 'tate_press';
+
+  // Back
+  static const String row = 'row';
+  static const String pulldown = 'pulldown';
+  static const String pullup = 'pullup';
+  static const String rackPull = 'rack_pull';
+  static const String spineMobility = 'spine_mobility';
+
+  // Biceps
+  static const String curl = 'curl';
+
+  // Forearms
+  static const String wristCurl = 'wrist_curl';
+  static const String grip = 'grip';
+
+  // Legs - Quad dominant
+  static const String squat = 'squat';
+  static const String lunge = 'lunge';
+  static const String legExtension = 'leg_extension';
+
+  // Legs - Hip dominant
+  static const String deadlift = 'deadlift';
+  static const String hipThrust = 'hip_thrust';
+  static const String legCurl = 'leg_curl';
+  static const String gluteKickback = 'glute_kickback';
+  static const String reverseHyper = 'reverse_hyper';
+
+  // Legs - Other
+  static const String calfRaise = 'calf_raise';
+  static const String hipAdduction = 'hip_adduction';
+  static const String hipAbduction = 'hip_abduction';
+  static const String hipMobility = 'hip_mobility';
+  static const String ankleMobility = 'ankle_mobility';
+
+  // Core
+  static const String plank = 'plank';
+  static const String crunch = 'crunch';
+  static const String carry = 'carry';
+  static const String rotation = 'rotation';
+  static const String mountainClimber = 'mountain_climber';
+
+  // Full body / Cardio
+  static const String sled = 'sled';
+  static const String jump = 'jump';
+  static const String burpee = 'burpee';
+  static const String battleRopes = 'battle_ropes';
+  static const String wallBall = 'wall_ball';
+  static const String cardioMachine = 'cardio_machine';
+
+  // Mobility
+  static const String yoga = 'yoga';
+  static const String foamRoll = 'foam_roll';
+
+  /// Korean display names for each family key
+  static String getDisplayNameKo(String family) {
+    switch (family) {
+      // Chest
+      case benchPress: return '벤치 프레스';
+      case fly: return '플라이';
+      case pushup: return '푸시업';
+      case pullover: return '풀오버';
+      // Shoulders
+      case overheadPress: return '오버헤드 프레스';
+      case lateralRaise: return '레터럴 레이즈';
+      case frontRaise: return '프론트 레이즈';
+      case rearDelt: return '리어 델트';
+      case yRaise: return 'Y 레이즈';
+      case shrug: return '슈러그';
+      case uprightRow: return '업라이트 로우';
+      case shoulderMobility: return '어깨 모빌리티';
+      // Triceps
+      case dip: return '딥';
+      case tricepExtension: return '트라이셉 익스텐션';
+      case jmPress: return 'JM 프레스';
+      case tatePress: return '테이트 프레스';
+      // Back
+      case row: return '로우';
+      case pulldown: return '풀다운';
+      case pullup: return '풀업';
+      case rackPull: return '랙 풀';
+      case spineMobility: return '척추 모빌리티';
+      // Biceps
+      case curl: return '컬';
+      // Forearms
+      case wristCurl: return '손목 컬';
+      case grip: return '그립';
+      // Legs
+      case squat: return '스쿼트';
+      case lunge: return '런지';
+      case legExtension: return '레그 익스텐션';
+      case deadlift: return '데드리프트';
+      case hipThrust: return '힙 스러스트';
+      case legCurl: return '레그 컬';
+      case gluteKickback: return '글루트 킥백';
+      case reverseHyper: return '리버스 하이퍼';
+      case calfRaise: return '카프 레이즈';
+      case hipAdduction: return '힙 어덕션';
+      case hipAbduction: return '힙 어브덕션';
+      case hipMobility: return '고관절 모빌리티';
+      case ankleMobility: return '발목 모빌리티';
+      // Core
+      case plank: return '플랭크';
+      case crunch: return '크런치';
+      case carry: return '캐리';
+      case rotation: return '로테이션';
+      case mountainClimber: return '마운틴 클라이머';
+      // Full body / Cardio
+      case sled: return '슬레드';
+      case jump: return '점프';
+      case burpee: return '버피';
+      case battleRopes: return '배틀 로프';
+      case wallBall: return '월볼';
+      case cardioMachine: return '유산소 머신';
+      // Mobility
+      case yoga: return '요가';
+      case foamRoll: return '폼 롤링';
+      default: return family.replaceAll('_', ' ');
     }
   }
 }

@@ -4,6 +4,230 @@
 
 ---
 
+## 2026-02-16
+
+### Exercise Picker — Inline History & Dual-Action Cards
+
+#### 개요
+운동 선택기에서 카드 탭과 '+' 버튼의 역할을 분리하여 운동 기록 조회와 추가를 독립적으로 수행 가능하도록 변경
+
+#### 새로운 기능
+
+1. **카드 탭 → 기록 조회**
+   - 카드 본체 탭 시 해당 운동의 최근 3개 세션 기록을 인라인으로 표시
+   - PR (Epley formula 기반 추정 1RM) + 세션별 세트 기록
+   - 세션별 좌측 액센트 바 (최근일수록 진한 파란색)
+
+2. **'+' 버튼 → 운동 추가**
+   - IconButton으로 분리하여 카드 탭 이벤트와 독립
+   - 기존 동작 유지 (운동 추가 후 시트 닫기)
+
+3. **시각적 기록 표시**
+   - PR: 골드 그래디언트 배너, 트로피 아이콘, 볼드 중량 표시
+   - 세션 블록: 날짜별 액센트 바 (1.0 → 0.55 → 0.3 불투명도)
+   - 세트 칩: 중량(볼드) + kg(작은) + ×reps(보조) 타이포그래피 분리
+   - 단일 확장 모드: 하나의 카드 확장 시 다른 카드 자동 축소
+
+4. **clientId 없는 경우 폴백**
+   - clientId가 null이면 기존 동작 유지 (탭으로 운동 추가)
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `presentation/providers/exercise_picker_provider.dart` | `SessionSetsGroup`, `ExercisePickerHistoryData`, `exercisePickerHistoryProvider` 추가 |
+| `shared/widgets/exercise_picker_content.dart` | `_expandedExerciseIds` 상태, `_toggleExpanded`, `_buildInlineHistory`, `_PickerHistoryContent` 위젯 추가 |
+| `presentation/screens/active_session_screen.dart` | `_ExercisePickerSheet`에 동일 패턴 적용, `_PickerHistoryContent` 위젯 추가 |
+
+---
+
+## 2026-02-13 ~ 2026-02-15
+
+### Exercise Classification & Grip Orientation (운동 분류 체계 확장)
+
+#### 개요
+200+ 운동에 대해 Family 분류, Grip Orientation, Angle 확장 등 메타데이터를 체계적으로 정리
+
+#### 새로운 기능
+
+1. **Grip Orientation 필드 추가**
+   - 값: `overhand`, `underhand`, `neutral`, `mixed`, `rotating`, `na`
+   - 도메인 엔티티, 모델, DB 마이그레이션 포함
+
+2. **Exercise Family 분류**
+   - `bench_press`, `squat`, `deadlift`, `curl` 등 50+ 패밀리 상수 정의
+   - 한국어 표시명 매핑 (`ExerciseFamily.getDisplayNameKo()`)
+   - Movement Group별 체계적 분류
+
+3. **Angle 확장**
+   - `high`, `low` 추가 (케이블 풀리 위치용)
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `domain/entities/exercise_entity.dart` | `gripOrientation` 필드, `GripOrientation` 클래스, `ExerciseFamily` 상수 클래스, `ExerciseAngle` high/low 추가 |
+| `data/models/exercise_model.dart` | `grip_orientation` JSON 파싱 추가 |
+| `supabase/migrations/20260212_200000_exercise_classification_and_grip.sql` | 200+ 운동 family/grip/angle 데이터 채우기, 인덱스 생성 |
+
+---
+
+### Hierarchical Exercise Picker (계층형 운동 선택기)
+
+#### 개요
+기존 근육군 기반 평면 리스트를 Family 기반 3단계 드릴다운 선택기로 전면 리팩토링
+
+#### 새로운 기능
+
+1. **3단계 플로우**
+   - Step 1: Family 선택 (예: "벤치 프레스", "스쿼트", "컬")
+   - Step 2: 변형 필터 (각도/장비/그립, 3개 초과 시에만 표시)
+   - Step 3: 최종 운동 선택
+
+2. **스마트 스킵**
+   - 패밀리에 운동 ≤3개이면 Step 2 자동 스킵
+   - 패밀리에 운동 1개이면 바로 선택
+
+3. **검색 오버라이드**
+   - 검색 입력 시 드릴다운 무시하고 전체 운동 플랫 검색
+
+4. **Contextual Recommendations**
+   - 현재 세션에 기반한 연계 운동 추천 (보완/보조)
+   - Family 단위 스코어 집계 (`aggregateToFamilyScores`)
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `presentation/providers/exercise_picker_provider.dart` | 신규 - `ExercisePickerNotifier`, `exercisePickerProvider`, `familyScoredListProvider` |
+| `shared/widgets/exercise_picker_content.dart` | 전면 리팩토링 - 3단계 드릴다운 UI |
+| `shared/widgets/exercise_picker_dialog.dart` | clientId 전달 지원 |
+| `domain/services/exercise_recommendation_service.dart` | `aggregateToFamilyScores()`, `getDetailedReasons()`, `ScoredFamily` 추가 |
+| `presentation/providers/session_provider.dart` | 추천 limit 증가, `clientRecommendedFamiliesProvider` 추가 |
+
+---
+
+### Academy Feature (아카데미 — 운동 교육 영상)
+
+#### 개요
+한국 피트니스 유튜버 25+ 채널의 교육 영상을 카테고리별로 탐색할 수 있는 아카데미 모듈
+
+#### 새로운 기능
+
+1. **영상 카탈로그**
+   - YouTube RSS 피드 기반 (API 키 불필요)
+   - 카테고리: 보디빌딩, 파워리프팅, 재활/가동성, 영양, 스트레칭
+
+2. **UI 구성**
+   - 카테고리 필터 칩 바
+   - 비디오 카드 (썸네일, 제목, 채널명, 조회수, 날짜)
+   - 인라인 YouTube 플레이어
+
+3. **동기화**
+   - Supabase Edge Function으로 RSS 피드 동기화
+   - 500건 페이지네이션
+
+#### 신규 파일
+
+| 파일 | 내용 |
+|------|------|
+| `lib/features/academy/domain/entities/academy_video_entity.dart` | 비디오 엔티티 |
+| `lib/features/academy/domain/entities/academy_category.dart` | 6개 카테고리 enum |
+| `lib/features/academy/domain/repositories/academy_repository.dart` | 리포지토리 인터페이스 |
+| `lib/features/academy/data/models/academy_video_model.dart` | JSON 직렬화 모델 |
+| `lib/features/academy/data/datasources/academy_remote_datasource.dart` | Supabase 데이터 접근 |
+| `lib/features/academy/data/repositories/academy_repository_impl.dart` | 리포지토리 구현 |
+| `lib/features/academy/presentation/providers/academy_provider.dart` | Riverpod 프로바이더 |
+| `lib/features/academy/presentation/screens/academy_screen.dart` | 메인 화면 |
+| `lib/features/academy/presentation/widgets/video_card.dart` | 비디오 카드 위젯 |
+| `lib/features/academy/presentation/widgets/youtube_player_widget.dart` | YouTube iframe 플레이어 |
+| `lib/features/academy/presentation/widgets/category_chip_bar.dart` | 카테고리 필터 칩 |
+| `supabase/functions/sync-academy-videos/index.ts` | RSS 동기화 Edge Function |
+| `supabase/migrations/20260214_100000_create_academy_tables.sql` | academy_channels/videos 테이블 |
+| `supabase/migrations/20260215_100000_add_academy_channels.sql` | 추가 채널 시드 |
+
+#### 의존성 추가
+- `youtube_player_iframe: ^5.1.7`
+
+---
+
+### Client Management 개선
+
+#### 개요
+마스터-디테일 패널 접기/펴기, 세션 패키지 연동, 운동 추천 카드 등 클라이언트 관리 UX 향상
+
+#### 변경 사항
+
+1. **마스터 패널 접기/펴기**
+   - 확장 뷰: 전체 클라이언트 리스트 + 검색
+   - 축소 뷰: 미니 아바타 레일
+   - 클라이언트 선택 후 자동 축소
+
+2. **운동 추천 카드**
+   - 클라이언트 상세 화면에 상위 5개 추천 패밀리 표시
+   - 추천 이유 상세 설명 (목표, 루틴, 최근 세션 기반)
+
+3. **세션 시작 검증**
+   - 잔여 세션 0이하 시 확인 다이얼로그 표시
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `presentation/screens/clients_master_detail_screen.dart` | 접기/펴기 UI, `_MiniClientAvatar`, 자동 축소 |
+| `presentation/widgets/client_detail_content.dart` | 운동 추천 카드 통합 |
+| `presentation/screens/client_detail_screen.dart` | 세션 시작 검증, 추천 카드 |
+| `presentation/providers/client_provider.dart` | `masterPanelCollapsedProvider` 추가 |
+| `presentation/widgets/exercise_recommendation_card.dart` | 신규 - 추천 운동 카드 위젯 |
+
+---
+
+### Session Management 개선
+
+#### 변경 사항
+
+1. **운동 제거 기능**
+   - 운동 탭 롱프레스 → 삭제 확인 다이얼로그
+   - 최소 1개 운동 유지 검증
+
+2. **세션 패키지 연동**
+   - 세션 완료 시 `clientSessionPackageProvider` 무효화
+   - 소진된 패키지도 표시용으로 조회
+
+3. **이전 세션 리뷰 화면**
+   - 레이아웃 개선
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `presentation/providers/session_provider.dart` | `removeExercise()`, 패키지 무효화, 히스토리 분기 |
+| `presentation/screens/active_session_screen.dart` | 롱프레스 삭제, 3단계 피커 통합 |
+| `presentation/screens/previous_session_review_screen.dart` | 리뷰 화면 레이아웃 개선 |
+| `presentation/widgets/program_selection_sheet.dart` | 마이너 수정 |
+| `calendar/presentation/providers/calendar_provider.dart` | 패키지 무효화 연동 |
+
+---
+
+### Database Migrations
+
+| 마이그레이션 | 내용 |
+|-------------|------|
+| `20260212_100000_fix_sessions_rls_policy.sql` | sessions RLS 정책 수정 — `get_my_account_id()` 사용으로 재귀 방지 |
+| `20260212_200000_exercise_classification_and_grip.sql` | grip_orientation 컬럼, family/angle/grip 데이터 채우기 |
+| `20260214_100000_create_academy_tables.sql` | academy_channels/videos 테이블, 25개 채널 시드 |
+| `20260215_100000_add_academy_channels.sql` | 추가 채널 시드 (중복 시 무시) |
+
+---
+
+### Navigation
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `lib/navigation/app_router.dart` | `TrainerAcademyPlaceholder` → `AcademyScreen` 연결 |
+
+---
+
 ## 2026-01-25
 
 ### Bodyweight & Isometric Exercise Support (맨몸/등척성 운동 지원)
@@ -513,6 +737,12 @@ Client 선택  → 코드 없이 회원가입 진행
 - [x] Active Session 기능 (세션 로깅)
 - [x] 대체 운동 기능 (Alternative Exercise)
 - [x] 맨몸/등척성 운동 지원 (Bodyweight & Isometric)
+- [x] 운동 분류 체계 확장 (Family, Grip, Angle)
+- [x] 계층형 운동 선택기 (3단계 드릴다운)
+- [x] 아카데미 모듈 (운동 교육 영상)
+- [x] 클라이언트 운동 추천 카드
+- [x] 마스터 패널 접기/펴기
+- [x] 운동 선택기 인라인 기록 표시
 
 ### 진행 중
 - [ ] AI Workout 생성
@@ -545,4 +775,4 @@ Flutter는 `.env` 파일을 자동으로 읽지 않음. 반드시 `--dart-define
 
 ---
 
-*Last Updated: 2026-01-25*
+*Last Updated: 2026-02-16*

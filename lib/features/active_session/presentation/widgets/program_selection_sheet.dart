@@ -5,6 +5,7 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../shared/widgets/exercise_picker_content.dart';
+import '../providers/exercise_picker_provider.dart';
 import '../../data/models/session_exercise_input.dart';
 import '../../domain/entities/session_entity.dart';
 import '../../domain/entities/exercise_entity.dart';
@@ -426,7 +427,10 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
             title: '빈 세션 시작',
             subtitle: '운동을 직접 추가하며 진행',
             color: AppColors.secondary,
-            onTap: () => setState(() => _currentView = _SheetView.exercisePicker),
+            onTap: () {
+              ref.read(exercisePickerProvider.notifier).reset();
+              setState(() => _currentView = _SheetView.exercisePicker);
+            },
           ),
           const SizedBox(height: AppSpacing.sm),
 
@@ -1557,7 +1561,10 @@ class _SessionTypeSelectionSheetState
             title: '빈 세션',
             subtitle: '운동을 직접 추가하며 진행',
             color: AppColors.secondary,
-            onTap: () => setState(() => _currentView = _SheetView.exercisePicker),
+            onTap: () {
+              ref.read(exercisePickerProvider.notifier).reset();
+              setState(() => _currentView = _SheetView.exercisePicker);
+            },
           ),
           const SizedBox(height: AppSpacing.sm),
 

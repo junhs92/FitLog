@@ -32,6 +32,7 @@ import '../features/lifestyle_log/presentation/screens/client_profile_screen.dar
 import '../features/lifestyle_log/presentation/screens/accept_invite_screen.dart';
 import '../features/client_sessions/presentation/screens/client_sessions_screen.dart';
 import '../features/client_sessions/presentation/screens/client_report_detail_screen.dart';
+import '../features/academy/presentation/screens/academy_screen.dart';
 import '../features/calendar/presentation/screens/calendar_screen.dart';
 import '../shared/models/user_role.dart';
 import 'routes.dart';
@@ -121,7 +122,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.trainerAcademy,
             name: RouteNames.trainerAcademy,
-            builder: (context, state) => const TrainerAcademyPlaceholder(),
+            builder: (context, state) => const AcademyScreen(),
           ),
           GoRoute(
             path: Routes.trainerProfile,
@@ -690,14 +691,6 @@ class ClientShell extends StatelessWidget {
       ),
     );
   }
-}
-
-// Trainer placeholder screens - will be replaced with actual implementations
-class TrainerAcademyPlaceholder extends StatelessWidget {
-  const TrainerAcademyPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) => const Center(child: Text('Trainer Academy'));
 }
 
 class TrainerProfilePlaceholder extends ConsumerWidget {

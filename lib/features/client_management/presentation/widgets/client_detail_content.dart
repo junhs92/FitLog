@@ -13,7 +13,7 @@ import '../../../muscle_map/presentation/providers/muscle_activity_provider.dart
 import '../../domain/entities/client_entity.dart';
 import '../providers/client_provider.dart';
 import 'client_form.dart';
-import 'lifestyle_summary_card.dart';
+import 'exercise_recommendation_card.dart';
 import 'recent_sessions_card.dart';
 
 /// Reusable client detail content widget.
@@ -127,7 +127,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
             height: 48,
             child: FloatingActionButton.extended(
               heroTag: 'session_fab_${widget.client.id}',
-              onPressed: widget.onStartSession,
+              onPressed: () => _handleStartSession(context),
               icon: const Icon(Icons.play_arrow),
               label: const Text('세션 시작'),
             ),
@@ -233,8 +233,8 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
           ),
           const SizedBox(height: AppSpacing.xl),
 
-          // 7-Day Lifestyle Summary
-          LifestyleSummaryCard(clientId: widget.client.id),
+          // Exercise Recommendations (Pre-Session Planning)
+          ExerciseRecommendationCard(clientId: widget.client.id),
           const SizedBox(height: AppSpacing.xl),
 
           // 7-Day Muscle Activity Map (Pre-Session Planning)
@@ -469,6 +469,37 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
       initialClientId: widget.client.id,
       initialDate: DateTime.now(),
     );
+  }
+
+  void _handleStartSession(BuildContext context) {
+    final package =
+        ref.read(clientSessionPackageProvider(widget.client.id)).valueOrNull;
+    if (package != null && package.sessionsRemaining <= 0) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('세션 잔여 횟수 부족'),
+          content: const Text(
+            '남은 세션이 0회입니다. 그래도 세션을 시작하시겠습니까?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                widget.onStartSession?.call();
+              },
+              child: const Text('시작'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    widget.onStartSession?.call();
   }
 
   void _showDeleteConfirmation(BuildContext context, WidgetRef ref) {

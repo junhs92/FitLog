@@ -9,6 +9,7 @@ import '../../../../core/theme/spacing.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../shared/widgets/exercise_picker_dialog.dart';
 import '../../data/models/session_exercise_input.dart';
+import '../providers/exercise_picker_provider.dart';
 import '../../domain/entities/exercise_entity.dart';
 import '../../domain/entities/session_entity.dart';
 import '../../domain/entities/session_exercise_entity.dart';
@@ -18,16 +19,18 @@ import '../providers/session_provider.dart';
 class _EditableExercise {
   final String exerciseId;
   final String exerciseName;
-  final SessionExerciseEntity original;
-  final ExerciseEntity? newExercise; // Non-null if changed
+  final SessionExerciseEntity? original; // Null for newly added exercises
+  final ExerciseEntity? newExercise; // Non-null if changed or newly added
   final bool isChanged;
+  final bool isNew; // True for exercises added via "운동 추가"
 
   _EditableExercise({
     required this.exerciseId,
     required this.exerciseName,
-    required this.original,
+    this.original,
     this.newExercise,
     this.isChanged = false,
+    this.isNew = false,
   });
 
   _EditableExercise copyWith({
@@ -35,6 +38,7 @@ class _EditableExercise {
     String? exerciseName,
     ExerciseEntity? newExercise,
     bool? isChanged,
+    bool? isNew,
   }) {
     return _EditableExercise(
       exerciseId: exerciseId ?? this.exerciseId,
@@ -42,6 +46,7 @@ class _EditableExercise {
       original: original,
       newExercise: newExercise ?? this.newExercise,
       isChanged: isChanged ?? this.isChanged,
+      isNew: isNew ?? this.isNew,
     );
   }
 }
@@ -98,6 +103,40 @@ class _PreviousSessionReviewScreenState
     }
   }
 
+  Future<void> _addExercise() async {
+    ref.read(exercisePickerProvider.notifier).reset();
+    final exercise = await ExercisePickerDialog.show(
+      context: context,
+      clientId: widget.clientId,
+      ref: ref,
+    );
+    if (exercise != null && mounted) {
+      setState(() {
+        _exercises.add(_EditableExercise(
+          exerciseId: exercise.id,
+          exerciseName: exercise.displayName,
+          newExercise: exercise,
+          isNew: true,
+        ));
+      });
+    }
+  }
+
+  void _removeExercise(int index) {
+    if (_exercises.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('최소 1개의 운동이 필요합니다'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _exercises.removeAt(index);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     _initExercisesIfNeeded();
@@ -130,7 +169,7 @@ class _PreviousSessionReviewScreenState
                   // Exercises section
                   _SectionCard(
                     title: '운동 목록',
-                    subtitle: '운동을 탭하여 변경할 수 있습니다',
+                    subtitle: '운동을 탭하여 변경하거나 추가/삭제할 수 있습니다',
                     icon: Icons.fitness_center,
                     child: Column(
                       children: [
@@ -138,18 +177,35 @@ class _PreviousSessionReviewScreenState
                           final index = entry.key;
                           final exercise = entry.value;
                           return Padding(
-                            padding: EdgeInsets.only(
-                              bottom: index < _exercises.length - 1
-                                  ? AppSpacing.sm
-                                  : 0,
+                            padding: const EdgeInsets.only(
+                              bottom: AppSpacing.sm,
                             ),
                             child: _ExerciseCard(
                               exercise: exercise,
                               index: index + 1,
                               onTap: () => _changeExercise(index),
+                              onRemove: () => _removeExercise(index),
                             ),
                           );
                         }),
+                        // Add exercise button
+                        OutlinedButton.icon(
+                          onPressed: _addExercise,
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('운동 추가'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(
+                              color: AppColors.primary,
+                              width: 1,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            minimumSize: const Size(double.infinity, 0),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -221,19 +277,29 @@ class _PreviousSessionReviewScreenState
         final index = entry.key;
         final editable = entry.value;
 
-        if (editable.isChanged && editable.newExercise != null) {
-          // Use the new exercise but keep original set/rep info
+        if (editable.isNew) {
+          // Newly added exercise — use defaults
           return SessionExerciseInput(
             exerciseId: editable.newExercise!.id,
             name: editable.newExercise!.displayName,
             orderIndex: index,
-            targetSets: editable.original.targetSets ?? 3,
-            targetReps: editable.original.recommendedReps.toString(),
-            restSeconds: editable.original.restSeconds ?? 90,
+            targetSets: 3,
+            targetReps: '10',
+            restSeconds: 90,
+          );
+        } else if (editable.isChanged && editable.newExercise != null) {
+          // Swapped exercise — keep original set/rep info
+          return SessionExerciseInput(
+            exerciseId: editable.newExercise!.id,
+            name: editable.newExercise!.displayName,
+            orderIndex: index,
+            targetSets: editable.original!.targetSets ?? 3,
+            targetReps: editable.original!.recommendedReps.toString(),
+            restSeconds: editable.original!.restSeconds ?? 90,
           );
         } else {
           // Use original exercise with historical data
-          return SessionExerciseInput.fromPrevious(editable.original, index);
+          return SessionExerciseInput.fromPrevious(editable.original!, index);
         }
       }).toList();
 
@@ -527,30 +593,37 @@ class _ExerciseCard extends StatelessWidget {
   final _EditableExercise exercise;
   final int index;
   final VoidCallback onTap;
+  final VoidCallback onRemove;
 
   const _ExerciseCard({
     required this.exercise,
     required this.index,
     required this.onTap,
+    required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
+    final borderColor = exercise.isNew
+        ? AppColors.success.withValues(alpha: 0.3)
+        : exercise.isChanged
+            ? AppColors.primary.withValues(alpha: 0.3)
+            : AppColors.neutral200;
+    final bgColor = exercise.isNew
+        ? AppColors.success.withValues(alpha: 0.05)
+        : exercise.isChanged
+            ? AppColors.primary.withValues(alpha: 0.05)
+            : AppColors.surfaceLight;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
-          color: exercise.isChanged
-              ? AppColors.primary.withValues(alpha: 0.05)
-              : AppColors.surfaceLight,
+          color: bgColor,
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          border: Border.all(
-            color: exercise.isChanged
-                ? AppColors.primary.withValues(alpha: 0.3)
-                : AppColors.neutral200,
-          ),
+          border: Border.all(color: borderColor),
         ),
         child: Row(
           children: [
@@ -591,7 +664,26 @@ class _ExerciseCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (exercise.isChanged)
+                      if (exercise.isNew)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.success,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            '추가됨',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      else if (exercise.isChanged)
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 6,
@@ -624,6 +716,16 @@ class _ExerciseCard extends StatelessWidget {
                 ],
               ),
             ),
+            // Remove button
+            IconButton(
+              onPressed: onRemove,
+              icon: const Icon(Icons.remove_circle_outline),
+              iconSize: 18,
+              color: AppColors.error,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              tooltip: '삭제',
+            ),
             // Edit indicator
             Icon(
               Icons.edit_outlined,
@@ -637,7 +739,10 @@ class _ExerciseCard extends StatelessWidget {
   }
 
   String _buildSetRepsInfo() {
-    final original = exercise.original;
+    if (exercise.original == null) {
+      return '3세트 × 10회 | 휴식 90초';
+    }
+    final original = exercise.original!;
     // Get working sets (exclude warmup)
     final workingSets = original.sets.where((s) => !s.isWarmup).toList();
 

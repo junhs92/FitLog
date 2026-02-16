@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/colors.dart';
 import '../../core/theme/spacing.dart';
 import '../../features/active_session/domain/entities/exercise_entity.dart';
+import '../../features/active_session/presentation/providers/exercise_picker_provider.dart';
 import 'exercise_picker_content.dart';
 
 /// Dialog for selecting an exercise from the library
@@ -19,7 +20,10 @@ class ExercisePickerDialog extends ConsumerWidget {
   static Future<ExerciseEntity?> show({
     required BuildContext context,
     String? clientId,
+    WidgetRef? ref,
   }) {
+    // Reset picker state before opening
+    ref?.read(exercisePickerProvider.notifier).reset();
     return showModalBottomSheet<ExerciseEntity>(
       context: context,
       isScrollControlled: true,
