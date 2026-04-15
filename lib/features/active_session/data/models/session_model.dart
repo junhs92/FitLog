@@ -30,6 +30,7 @@ class SessionModel extends SessionEntity {
     super.savedTotalVolume,
     super.savedAvgReps,
     super.savedAvgRpe,
+    super.restSeconds,
   });
 
   factory SessionModel.fromJson(Map<String, dynamic> json) {
@@ -108,6 +109,7 @@ class SessionModel extends SessionEntity {
       savedTotalVolume: (json['total_volume'] as num?)?.toDouble(),
       savedAvgReps: (json['avg_reps'] as num?)?.toDouble(),
       savedAvgRpe: (json['avg_rpe'] as num?)?.toDouble(),
+      restSeconds: json['rest_timer_seconds'] as int? ?? 90,
     );
   }
 
@@ -151,6 +153,7 @@ class SessionModel extends SessionEntity {
       'total_volume': savedTotalVolume,
       'avg_reps': savedAvgReps,
       'avg_rpe': savedAvgRpe,
+      'rest_timer_seconds': restSeconds,
     };
   }
 
@@ -197,6 +200,7 @@ class SessionModel extends SessionEntity {
       savedTotalVolume: entity.savedTotalVolume,
       savedAvgReps: entity.savedAvgReps,
       savedAvgRpe: entity.savedAvgRpe,
+      restSeconds: entity.restSeconds,
     );
   }
 

@@ -32,10 +32,23 @@ class AppColors {
   static const Color error = Color(0xFFFF6B6B);
   static const Color info = Color(0xFF4DABF7);
 
-  // Surface Colors
+  // Surface Colors (Light)
   static const Color surfaceLight = Color(0xFFFFFFFF);
   static const Color surfaceDark = Color(0xFF1A1B1E);
   static const Color surfaceElevated = Color(0xFFF8F9FA);
+
+  // Dark Theme Surface Colors
+  static const Color darkBackground = Color(0xFF0D0E12);
+  static const Color darkSurface = Color(0xFF161820);
+  static const Color darkSurfaceElevated = Color(0xFF1C1E28);
+  static const Color darkSurfaceCard = Color(0xFF1E2130);
+  static const Color darkBorder = Color(0xFF2A2D3A);
+  static const Color darkBorderSubtle = Color(0xFF22242E);
+
+  // Dark Theme Text Colors
+  static const Color darkTextPrimary = Color(0xFFECEDF0);
+  static const Color darkTextSecondary = Color(0xFF9CA3AF);
+  static const Color darkTextTertiary = Color(0xFF6B7280);
 
   // Overlay
   static const Color overlayDark = Color(0x99000000); // 60% opacity

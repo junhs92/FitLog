@@ -2,12 +2,39 @@ import 'package:flutter/foundation.dart';
 import '../entities/exercise_entity.dart';
 import '../entities/session_entity.dart';
 import '../../../ai_workout/domain/entities/workout_program.dart';
+import '../../../muscle_map/domain/entities/muscle_group.dart';
 import '../../data/models/user_preference_model.dart';
 import '../../data/models/exercise_relation_model.dart';
+import '../../../../core/ontology/ontology_service.dart';
 
 /// Service for generating smart exercise recommendations
 /// based on client's goals, recent sessions, movement groups, and training split
 class ExerciseRecommendationService {
+  /// Muscle groups considered accessory (isolation-dominant small muscles)
+  static const Set<String> accessoryMuscleGroups = {
+    'biceps', 'triceps', 'forearms', 'calves',
+  };
+
+  /// Upper compound muscle groups (presence implies upper accessory opportunity)
+  static const Set<String> _upperCompoundMuscles = {
+    'chest', 'back', 'shoulders',
+  };
+
+  /// Lower compound muscle groups (presence implies lower accessory opportunity)
+  static const Set<String> _lowerCompoundMuscles = {
+    'quadriceps', 'hamstrings', 'glutes',
+  };
+
+  /// Upper accessory muscle groups
+  static const Set<String> _upperAccessoryMuscles = {
+    'biceps', 'triceps', 'forearms',
+  };
+
+  /// Lower accessory muscle groups
+  static const Set<String> _lowerAccessoryMuscles = {
+    'calves',
+  };
+
   /// Tunable weights for scoring (injected from database or defaults)
   final Map<String, double> _weights;
 
@@ -17,14 +44,19 @@ class ExerciseRecommendationService {
   /// Exercise relations indexed by fromExerciseId
   final Map<String, List<ExerciseRelationModel>>? _relations;
 
+  /// Ontology service for muscle-level scoring and recovery awareness
+  final OntologyService _ontologyService;
+
   /// Constructor with optional weight, preferences, and relations injection
   ExerciseRecommendationService({
     Map<String, double>? weights,
     UserPreferenceModel? userPreferences,
     Map<String, List<ExerciseRelationModel>>? relations,
+    OntologyService? ontologyService,
   })  : _weights = weights ?? defaultWeights,
         _userPreferences = userPreferences,
-        _relations = relations;
+        _relations = relations,
+        _ontologyService = ontologyService ?? const OntologyService();
 
   /// Get weight value with fallback to default
   double _getWeight(String key) => _weights[key] ?? defaultWeights[key] ?? 0;
@@ -82,6 +114,12 @@ class ExerciseRecommendationService {
       MovementGroup.other,
     ],
   };
+
+  /// Get movement groups for a given split focus (e.g. 'push' → ['push'])
+  static List<String> getMovementGroupsForFocus(String? focus) {
+    if (focus == null) return [];
+    return _splitFocusToGroups[focus] ?? [];
+  }
 
   /// Group relationships for complementary training
   /// After training one group, recommend these related groups
@@ -1128,6 +1166,12 @@ class ExerciseRecommendationService {
     String? labelPriority;
     int labelWeight = 0;
 
+    // Supplementary = accessory/isolation exercises only
+    // Compound exercises belong in complementary recommendations
+    if (candidate.category == ExerciseCategory.compound) {
+      return _ScoredWithLabel(candidate, 0, '');
+    }
+
     // ============================================================
     // User Preferences: Filter exercises based on avoided equipment/muscles
     // ============================================================
@@ -1385,6 +1429,7 @@ class ExerciseRecommendationService {
         movementGroup: representative.movementGroup,
         muscleGroup: representative.muscleGroup,
         isCustom: false,
+        familyCategory: representative.category,
         hasContextualRecommendation: hasContextualRec,
         contextualType: contextualType,
       ));
@@ -1402,6 +1447,7 @@ class ExerciseRecommendationService {
         movementGroup: scored.exercise.movementGroup,
         muscleGroup: scored.exercise.muscleGroup,
         isCustom: scored.exercise.isCustom,
+        familyCategory: scored.exercise.category,
         hasContextualRecommendation: contextualExerciseIds.contains(scored.exercise.id),
         contextualType: null,
       ));
@@ -1411,6 +1457,55 @@ class ExerciseRecommendationService {
     families.sort((a, b) => b.score.compareTo(a.score));
 
     return families;
+  }
+
+  /// Detect which accessory muscle groups the client has neglected.
+  /// Returns set of muscleGroup strings (e.g. {'biceps', 'calves'}).
+  /// "Neglected" = client trained the parent region (upper/lower compounds)
+  /// in recent sessions but did NOT include the accessory group.
+  Set<String> getNeglectedAccessoryGroups({
+    required List<SessionEntity> recentSessions,
+    int sessionLookback = 5,
+  }) {
+    final sessions = recentSessions.take(sessionLookback).toList();
+    if (sessions.isEmpty) return {};
+
+    // Collect all muscle groups trained across recent sessions
+    bool hasUpperCompound = false;
+    bool hasLowerCompound = false;
+    final trainedMuscles = <String>{};
+
+    for (final session in sessions) {
+      for (final exercise in session.exercises) {
+        final muscle = exercise.exercise.muscleGroup?.toLowerCase();
+        if (muscle == null) continue;
+        trainedMuscles.add(muscle);
+        if (_upperCompoundMuscles.contains(muscle)) hasUpperCompound = true;
+        if (_lowerCompoundMuscles.contains(muscle)) hasLowerCompound = true;
+      }
+    }
+
+    final neglected = <String>{};
+
+    // If client did upper compound work but skipped upper accessories
+    if (hasUpperCompound) {
+      for (final accessory in _upperAccessoryMuscles) {
+        if (!trainedMuscles.contains(accessory)) {
+          neglected.add(accessory);
+        }
+      }
+    }
+
+    // If client did lower compound work but skipped lower accessories
+    if (hasLowerCompound) {
+      for (final accessory in _lowerAccessoryMuscles) {
+        if (!trainedMuscles.contains(accessory)) {
+          neglected.add(accessory);
+        }
+      }
+    }
+
+    return neglected;
   }
 }
 
@@ -1425,6 +1520,7 @@ class ScoredFamily {
   final String movementGroup;
   final String? muscleGroup;
   final bool isCustom;
+  final String familyCategory;
   final bool hasContextualRecommendation;
   final RecommendationType? contextualType;
 
@@ -1438,9 +1534,16 @@ class ScoredFamily {
     required this.movementGroup,
     this.muscleGroup,
     this.isCustom = false,
+    this.familyCategory = ExerciseCategory.compound,
     this.hasContextualRecommendation = false,
     this.contextualType,
   });
+
+  bool get isCompound => familyCategory == ExerciseCategory.compound;
+  bool get isAccessory => familyCategory == ExerciseCategory.isolation;
+  bool get isMobility => familyCategory == ExerciseCategory.mobility ||
+      familyCategory == ExerciseCategory.warmup ||
+      familyCategory == ExerciseCategory.cooldown;
 }
 
 /// Internal helper for scoring with label
@@ -1578,9 +1681,25 @@ class ExercisePrescription {
     ),
   };
 
+  // Midpoint convenience getters
+  int get midReps => (minReps + maxReps) ~/ 2;
+  double get midRpe => (minRpe + maxRpe) / 2;
+  int get midRestSeconds => (minRestSeconds + maxRestSeconds) ~/ 2;
+
+  /// Normalize display goal name ('Weight Loss') to key ('weight_loss')
+  static String _normalizeGoal(String goal) =>
+      goal.toLowerCase().replaceAll(' ', '_');
+
   /// Get prescription for a goal (defaults to general_fitness)
   static ExercisePrescription forGoal(String? goal) {
     return goalPrescriptions[goal] ?? goalPrescriptions['general_fitness']!;
+  }
+
+  /// Get prescription for a client goal (handles display name format)
+  static ExercisePrescription forClientGoal(String? goal) {
+    if (goal == null) return goalPrescriptions['general_fitness']!;
+    return goalPrescriptions[_normalizeGoal(goal)] ??
+        goalPrescriptions['general_fitness']!;
   }
 }
 

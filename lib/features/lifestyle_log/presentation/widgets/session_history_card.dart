@@ -365,6 +365,7 @@ class SessionHistoryCard extends StatelessWidget {
     final setSummary = _formatSetSummaryRich(exercise.sets);
     final hasPR = exercise.hasPR;
     final comments = _extractExerciseComments(exercise);
+    final memo = _extractExerciseMemo(exercise);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
@@ -458,6 +459,29 @@ class SessionHistoryCard extends StatelessWidget {
                 runSpacing: 4,
                 children:
                     comments.map((c) => _buildCommentChip(c)).toList(),
+              ),
+            ),
+          // Free-form memo below comments
+          if (memo != null && memo.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 32, top: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.edit_note, size: 12, color: AppColors.neutral500),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      memo,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                        color: AppColors.neutral600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -655,6 +679,16 @@ class SessionHistoryCard extends StatelessWidget {
       return weight.toInt().toString();
     }
     return weight.toStringAsFixed(1);
+  }
+
+  /// Extract free-form memo from exercise notes JSON
+  String? _extractExerciseMemo(SessionExerciseEntity exercise) {
+    if (exercise.notes == null || exercise.notes!.isEmpty) return null;
+    try {
+      final json = jsonDecode(exercise.notes!);
+      if (json is Map) return json['trainerMemo'] as String?;
+    } catch (_) {}
+    return null;
   }
 
   /// Extract SetComment enums from exercise notes JSON using database keys

@@ -314,4 +314,22 @@ class AIWorkoutRepositoryImpl implements AIWorkoutRepository {
       return Left(ServerFailure(message: e.toString()));
     }
   }
+
+  @override
+  Future<Either<Failure, List<SessionAlternative>>>
+      getClientPreviousExercises({
+    required String clientId,
+    required String exerciseId,
+  }) async {
+    try {
+      final result = await _remoteDataSource.getClientPreviousExercises(
+        clientId: clientId,
+        exerciseId: exerciseId,
+      );
+      return Right(result);
+    } catch (e) {
+      debugPrint('🔴 [Repository] getClientPreviousExercises error: $e');
+      return Left(ServerFailure(message: e.toString()));
+    }
+  }
 }

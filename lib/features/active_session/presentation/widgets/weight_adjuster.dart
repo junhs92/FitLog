@@ -43,9 +43,9 @@ class WeightAdjuster extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         children: [
@@ -73,7 +73,7 @@ class WeightAdjuster extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.neutralBlack,
+                          color: AppColors.darkTextPrimary,
                         ),
                       ),
                       const SizedBox(width: 2),
@@ -150,7 +150,7 @@ class WeightAdjuster extends StatelessWidget {
                 vertical: AppSpacing.md,
               ),
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
+                color: AppColors.darkSurfaceElevated,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Row(
@@ -165,7 +165,7 @@ class WeightAdjuster extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                      color: AppColors.darkTextPrimary,
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),

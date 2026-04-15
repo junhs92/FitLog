@@ -80,10 +80,10 @@ class _ClientsMasterDetailScreenState
           Container(
             width: 1,
             decoration: BoxDecoration(
-              color: AppColors.neutral200,
+              color: AppColors.darkBorder,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.white.withValues(alpha: 0.02),
                   offset: const Offset(1, 0),
                   blurRadius: 3,
                 ),
@@ -243,7 +243,7 @@ class _MasterPanel extends ConsumerWidget {
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
             border: const Border(
-              bottom: BorderSide(color: AppColors.neutral200),
+              bottom: BorderSide(color: AppColors.darkBorder),
             ),
           ),
           child: SafeArea(
@@ -295,7 +295,7 @@ class _MasterPanel extends ConsumerWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         border: const Border(
-          bottom: BorderSide(color: AppColors.neutral200),
+          bottom: BorderSide(color: AppColors.darkBorder),
         ),
       ),
       child: SafeArea(
@@ -810,14 +810,14 @@ class _DetailPanel extends ConsumerWidget {
 
   Widget _buildEmptySelection(BuildContext context) {
     return Container(
-      color: AppColors.neutral100,
+      color: AppColors.darkSurfaceCard,
       child: Center(
         child: Card(
           elevation: 0,
-          color: Colors.white,
+          color: AppColors.darkSurfaceCard,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: AppColors.neutral200),
+            side: BorderSide(color: AppColors.darkBorder),
           ),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.xxxl),

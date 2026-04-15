@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/colors.dart';
 import '../../core/theme/spacing.dart';
+import '../../navigation/routes.dart';
 
 /// Screen for viewing notifications
 class NotificationsScreen extends ConsumerWidget {
@@ -91,7 +93,21 @@ class NotificationsScreen extends ConsumerWidget {
     }
 
     // Navigate based on notification type
-    // TODO: Implement navigation based on notification.data
+    final sessionId = notification.data?['session_id'] as String?;
+    switch (notification.type) {
+      case 'report_ready':
+      case 'session_complete':
+      case 'achievement':
+        if (sessionId != null) {
+          context.push(
+            Routes.clientSessionReport.replaceAll(':sessionId', sessionId),
+          );
+        }
+        break;
+      default:
+        // No deep-link destination — mark as read and dismiss only
+        break;
+    }
   }
 
   void _deleteNotification(WidgetRef ref, String notificationId) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/auth/presentation/screens/forgot_password_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/auth/presentation/screens/register_screen.dart';
 import '../features/auth/presentation/screens/splash_screen.dart';
@@ -13,6 +14,7 @@ import '../features/client_management/presentation/screens/clients_master_detail
 import '../features/client_management/presentation/screens/connect_client_screen.dart';
 import '../features/client_management/presentation/screens/create_invite_screen.dart';
 import '../features/trainer_home/presentation/screens/trainer_home_screen.dart';
+import '../features/trainer_home/presentation/screens/trainer_profile_screen.dart';
 import '../features/active_session/presentation/screens/active_session_screen.dart';
 import '../features/active_session/presentation/screens/previous_session_review_screen.dart';
 import '../features/active_session/presentation/screens/session_summary_screen.dart';
@@ -27,6 +29,7 @@ import '../features/workout_templates/presentation/screens/template_editor_scree
 import '../features/workout_templates/presentation/screens/template_review_screen.dart';
 import '../features/workout_templates/domain/entities/workout_template_entity.dart';
 import '../features/lifestyle_log/presentation/screens/client_home_screen.dart';
+import '../features/lifestyle_log/presentation/screens/client_record_screen.dart';
 import '../features/lifestyle_log/presentation/screens/client_stats_screen.dart';
 import '../features/lifestyle_log/presentation/screens/client_profile_screen.dart';
 import '../features/lifestyle_log/presentation/screens/accept_invite_screen.dart';
@@ -35,6 +38,8 @@ import '../features/client_sessions/presentation/screens/client_report_detail_sc
 import '../features/academy/presentation/screens/academy_screen.dart';
 import '../features/calendar/presentation/screens/calendar_screen.dart';
 import '../shared/models/user_role.dart';
+import '../shared/screens/notifications_screen.dart';
+import '../shared/screens/settings_screen.dart';
 import 'routes.dart';
 
 /// Global navigator key
@@ -52,7 +57,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = authState.valueOrNull != null;
       final isAuthRoute = state.matchedLocation == Routes.login ||
           state.matchedLocation == Routes.register ||
-          state.matchedLocation == Routes.splash;
+          state.matchedLocation == Routes.splash ||
+          state.matchedLocation == Routes.forgotPassword;
 
       // If not logged in and not on auth route, redirect to login
       if (!isLoggedIn && !isAuthRoute) {
@@ -89,6 +95,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: Routes.register,
         name: RouteNames.register,
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: Routes.forgotPassword,
+        name: RouteNames.forgotPassword,
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+
+      // Shared full-screen routes (no bottom nav)
+      GoRoute(
+        path: Routes.notifications,
+        name: RouteNames.notifications,
+        builder: (context, state) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: Routes.settings,
+        name: RouteNames.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
 
       // Trainer routes (shell for bottom navigation)
@@ -127,7 +150,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: Routes.trainerProfile,
             name: RouteNames.trainerProfile,
-            builder: (context, state) => const TrainerProfilePlaceholder(),
+            builder: (context, state) => const TrainerProfileScreen(),
           ),
         ],
       ),
@@ -352,6 +375,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: RouteNames.clientProfile,
             builder: (context, state) => const _ClientProfileWrapper(),
           ),
+          GoRoute(
+            path: Routes.clientRecord,
+            name: RouteNames.clientRecord,
+            builder: (context, state) => const _ClientRecordWrapper(),
+          ),
         ],
       ),
 
@@ -507,8 +535,10 @@ class _TrainerShellState extends State<TrainerShell>
     final showExtended = MediaQuery.sizeOf(context).width >= 900;
 
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
+          Row(
+            children: [
           // NavigationRail for tablet/desktop (animated slide in)
           if (isTablet)
             SlideTransition(
@@ -536,6 +566,12 @@ class _TrainerShellState extends State<TrainerShell>
                           ),
                         )
                       : const SizedBox(height: 32),
+                  trailing: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: NotificationBadge(
+                      onTap: () => context.push(Routes.notifications),
+                    ),
+                  ),
                   destinations: const [
                     NavigationRailDestination(
                       icon: Icon(Icons.home_outlined),
@@ -583,6 +619,18 @@ class _TrainerShellState extends State<TrainerShell>
               child: widget.child,
             ),
           ),
+            ],
+          ),
+
+          // Notification badge overlay for mobile (top-right corner)
+          if (!isTablet)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 4,
+              right: 4,
+              child: NotificationBadge(
+                onTap: () => context.push(Routes.notifications),
+              ),
+            ),
         ],
       ),
 
@@ -638,6 +686,8 @@ class ClientShell extends StatelessWidget {
     if (location.startsWith(Routes.clientSessions)) return 1;
     if (location.startsWith(Routes.clientStats)) return 2;
     if (location.startsWith(Routes.clientProfile)) return 3;
+    // /client/record is a Today sub-flow — highlight Today (index 0)
+    if (location.startsWith(Routes.clientRecord)) return 0;
     // clientHome ('/client') checked last as it's a prefix of all others
     return 0;
   }
@@ -693,62 +743,6 @@ class ClientShell extends StatelessWidget {
   }
 }
 
-class TrainerProfilePlaceholder extends ConsumerWidget {
-  const TrainerProfilePlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('Trainer Profile', style: TextStyle(fontSize: 24)),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: () => _showLogoutDialog(context, ref),
-              icon: const Icon(Icons.logout),
-              label: const Text('Log Out'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Log Out'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              await ref.read(authNotifierProvider.notifier).logout();
-              if (context.mounted) {
-                context.go(Routes.login);
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // Client screen wrappers - inject clientId from auth state
 class _ClientHomeWrapper extends ConsumerWidget {
   const _ClientHomeWrapper();
@@ -799,5 +793,18 @@ class _ClientProfileWrapper extends ConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
     return ClientProfileScreen(clientId: user.id);
+  }
+}
+
+class _ClientRecordWrapper extends ConsumerWidget {
+  const _ClientRecordWrapper();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authStateProvider).valueOrNull;
+    if (user == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return ClientRecordScreen(clientId: user.id);
   }
 }

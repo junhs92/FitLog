@@ -91,14 +91,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final LoginUseCase _loginUseCase;
   final RegisterUseCase _registerUseCase;
   final LogoutUseCase _logoutUseCase;
+  final AuthRepository _authRepository;
 
   AuthNotifier({
     required LoginUseCase loginUseCase,
     required RegisterUseCase registerUseCase,
     required LogoutUseCase logoutUseCase,
+    required AuthRepository authRepository,
   })  : _loginUseCase = loginUseCase,
         _registerUseCase = registerUseCase,
         _logoutUseCase = logoutUseCase,
+        _authRepository = authRepository,
         super(const AuthState());
 
   Future<void> login(String email, String password) async {
@@ -163,6 +166,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
   }
 
+  Future<void> resetPassword(String email) async {
+    state = state.copyWith(status: AuthStatus.loading);
+
+    final result = await _authRepository.sendPasswordResetEmail(email);
+
+    result.fold(
+      (failure) => state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: failure.message,
+      ),
+      (_) => state = state.copyWith(
+        status: AuthStatus.unauthenticated,
+        errorMessage: null,
+      ),
+    );
+  }
+
   void clearError() {
     state = state.copyWith(errorMessage: null);
   }
@@ -175,5 +195,6 @@ final authNotifierProvider =
     loginUseCase: ref.watch(loginUseCaseProvider),
     registerUseCase: ref.watch(registerUseCaseProvider),
     logoutUseCase: ref.watch(logoutUseCaseProvider),
+    authRepository: ref.watch(authRepositoryProvider),
   );
 });

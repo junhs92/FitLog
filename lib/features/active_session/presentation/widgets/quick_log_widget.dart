@@ -178,7 +178,7 @@ class _PresetChip extends StatelessWidget {
         HapticFeedback.lightImpact();
         onTap?.call();
       },
-      backgroundColor: AppColors.neutral100,
+      backgroundColor: AppColors.darkSurfaceCard,
       labelStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
@@ -186,7 +186,7 @@ class _PresetChip extends StatelessWidget {
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppColors.neutral300),
+        side: BorderSide(color: AppColors.darkBorder),
       ),
     );
   }
@@ -325,7 +325,7 @@ class _QuickAdjustButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.neutral100,
+      color: AppColors.darkSurfaceCard,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: InkWell(
         onTap: () {

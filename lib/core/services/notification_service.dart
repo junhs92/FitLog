@@ -272,18 +272,12 @@ class NotificationService {
         .eq('is_read', false);
   }
 
-  /// Get unread count
+  /// Get unread count via server-side RPC (avoids fetching all rows)
   Future<int> getUnreadCount() async {
-    final userId = _client.auth.currentUser?.id;
-    if (userId == null) return 0;
+    if (_client.auth.currentUser == null) return 0;
 
-    final response = await _client
-        .from('notifications')
-        .select()
-        .eq('user_id', userId)
-        .eq('is_read', false);
-
-    return (response as List).length;
+    final response = await _client.rpc('get_unread_notification_count');
+    return (response as int?) ?? 0;
   }
 
   /// Get notification preferences

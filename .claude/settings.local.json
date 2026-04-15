@@ -1,6 +1,12 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Grep",
+      "Glob",
       "Bash(dir:*)",
       "Bash(ls:*)",
       "Bash(test:*)",
@@ -8,7 +14,11 @@
       "Bash(where:*)",
       "Bash(find:*)",
       "Bash(claude mcp list:*)",
-      "mcp__context7__get-library-docs"
+      "mcp__context7__get-library-docs",
+      "Bash(cd:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(flutter analyze:*)"
     ],
     "deny": [],
     "ask": []

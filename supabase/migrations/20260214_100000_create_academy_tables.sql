@@ -1,6 +1,6 @@
 -- Migration: Create academy tables for YouTube video feed
 -- Created: 2026-02-14
--- Updated: 2026-02-15 — real YouTube channel IDs (videos fetched via RSS)
+-- Updated: 2026-02-18 — restructured to 3 categories with 7 curated channels
 -- Purpose: academy_channels (channel registry) + academy_videos (cached video metadata)
 
 -- ============================================
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS academy_channels (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   CONSTRAINT academy_channels_category_check
-    CHECK (category IN ('bodybuilding', 'powerlifting', 'rehab_mobility', 'nutrition', 'stretching'))
+    CHECK (category IN ('exercise', 'rehab', 'nutrition'))
 );
 
 -- ============================================
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS academy_videos (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   CONSTRAINT academy_videos_category_check
-    CHECK (category IN ('bodybuilding', 'powerlifting', 'rehab_mobility', 'nutrition', 'stretching'))
+    CHECK (category IN ('exercise', 'rehab', 'nutrition'))
 );
 
 -- ============================================
@@ -78,44 +78,17 @@ CREATE POLICY "academy_videos_service_all" ON academy_videos
   USING (true) WITH CHECK (true);
 
 -- ============================================
--- SEED: Real Korean fitness YouTuber channels
+-- SEED: Curated Korean fitness YouTuber channels
 -- ============================================
 INSERT INTO academy_channels (channel_id, channel_name, channel_name_ko, category) VALUES
-  -- Bodybuilding (보디빌딩)
-  ('UCdtRAcd3L_UpV4tMXCw63NQ', 'Physical Gallery',       '피지컬갤러리',         'bodybuilding'),
-  ('UCjGoJbTmFYjd5OnPRUur02A', 'Kim Kang Min',           '김강민',              'bodybuilding'),
-  ('UC3hRpIQ4x5niJDwjajQSVPg', 'FITVELY',                '핏블리',              'bodybuilding'),
-  ('UCcMSJmR90Y_McofszAVxjAQ', 'Kim Seong Hwan',         '김성환헬스유튜브',      'bodybuilding'),
-  ('UCuwyPNJScQ5luAV7b8juFfg', 'Kang Kyung Won',         '강경원',              'bodybuilding'),
-  ('UCMA7GmwOUuvSlM4XUhN2JFA', 'Seol Ki Kwan',           '설기관',              'bodybuilding'),
-  ('UCYJDUekoQz0-bo8al1diLWQ', 'Mal Wang TV',            '말왕TV',              'bodybuilding'),
-  ('UC249-iv-esDsCbsVRVC_v5A', 'Health Brain Official',  '헬스뇌피셜',           'bodybuilding'),
-  -- Powerlifting (파워리프팅)
-  ('UCB_InNNxt0TRjGrTiqyTtFw', '1-Min Powerlifting',     '1분 파워리프팅',       'powerlifting'),
-  ('UCc8atk3sIWO-5k4mWhfqIuw', 'Kim Dong Hyun PL',       '김동현 PowerLifting',  'powerlifting'),
-  ('UCcR-weSu2qrz5RP8Oeq6kbg', 'IPF KOREA',              'IPF KOREA',           'powerlifting'),
-  ('UCCS3--kPUakwPG4SP_TtkGg', 'Joint Destroyer',        '관절파괴자',           'powerlifting'),
-  ('UCmdFfKkZFoLS3FjbpL_bB6A', 'Team Triple Strength',   'TEAM TRIPLE STRENGTH 팀트리플', 'powerlifting'),
-  -- Rehab / Mobility (재활/모빌리티)
-  ('UCsyhk1jx2eeafzMSYhQc9Mg', 'PT Jaeseok',             '물리치료사PT재석',      'rehab_mobility'),
-  ('UCNEqrN9CGcd_RW9Uj9J_FKQ', 'Real Rehab',             '리얼리햅',             'rehab_mobility'),
-  ('UC0kjUOzhExSnUhp2pmcGlrg', 'PT Yoon',                '물리치료사 윤쌤',       'rehab_mobility'),
-  ('UCiAtFdOzCLP7s_EnamnIGjg', 'Rehavi',                  '리해비',               'rehab_mobility'),
-  ('UCATBFeLSoEImAPlToNNH-Hg', 'PT Jaban',               '운동하는 물리치료사_자반', 'rehab_mobility'),
-  ('UC69aaZIgXIAI7L0vZT7wX0Q', 'PT Hands',               'PT핸즈',               'rehab_mobility'),
-  -- Nutrition (영양)
-  ('UCMFk5S7g5DY-CZNVh_Kyz_A', 'Pharmacist Drug Stories', '약사가 들려주는 약 이야기', 'nutrition'),
-  ('UCoe-0EVDJnjlSoPK8ygcGwQ', 'Gym Jong Kook',          '김종국 GYM JONG KOOK',  'nutrition'),
-  ('UC0NazDJj6HZnqXR9x9HiXEg', 'Dear Dabin',            '디어다빈_영양사의 다이어트', 'nutrition'),
-  ('UC-9mf6zsaEf5YFIpEzElIEw', 'Nutrition Talk',          '영양톡',               'nutrition'),
-  ('UCaAV1hS46BOWR_sGvTP1iYA', 'Lim RD',                  '영양사 임알디',         'nutrition'),
-  ('UCCECtlEkh5QluApGuI1MqJQ', 'Healthy Hanna',           '건강한나 영양사',       'nutrition'),
-  ('UCQHIirHu_EEWIuwsUN3GAwA', 'Living-Alone Dietitian',  '자취방 영양사',         'nutrition'),
-  -- Stretching (스트레칭)
-  ('UC4yq3FWEWqMvFNFBsV3gbKQ', 'Hip Euddeume',            '힙으뜸',               'stretching'),
-  ('UCxHcczukcG21up2MBe8yP_Q', 'Kang Hana Stretching',    '강하나 스트레칭',       'stretching'),
-  ('UCaBpzR9Ti-DqR1v5S01OLhw', 'Yoga Song Hayeon',        '요가쏭',               'stretching'),
-  ('UCsd1XJK6zwiCqTzf8KQQgrQ', 'Yoga Boy',                '요가소년',              'stretching'),
-  ('UCq7bR6RxqqOx8cptc1-0AVQ', 'Allblanc TV',             'Allblanc TV',          'stretching'),
-  ('UCYa-mbstZLNmg1xyjYnZV9w', 'FoxgymTV',               'FoxgymTV',             'stretching')
+  -- Exercise (운동) — 2 channels
+  ('UChBKRycwLWou13wTAF--_mw', '3-Minute Exercise Science', '3분 운동과학',                'exercise'),
+  ('UChU7a6tVcJ-PEG4VW0dL36w', 'Fundamental',              '뻔더',                       'exercise'),
+  -- Rehab (재활) — 2 channels
+  ('UCPwxWbDnHIbOv0HqpNXOvUQ', 'Jaeho Fitness',            '재호 - Fitness',              'rehab'),
+  ('UC60jiGq5e5zoDiWyGPLVicg', 'Mr. Physio',               'Mr.Physio 호주물리치료사',      'rehab'),
+  -- Nutrition (영양) — 3 channels
+  ('UCMFk5S7g5DY-CZNVh_Kyz_A', 'Yakstory',                 '약사가 들려주는 약 이야기',     'nutrition'),
+  ('UCedNxnMK3b2-_hzqLyo4stg', 'Dr. Dingyo',               '닥터딩요',                    'nutrition'),
+  ('UC3iSLVH0MxHfwO69oHKpvog', 'Little Yaksa',             '리틀약사',                    'nutrition')
 ON CONFLICT (channel_id) DO NOTHING;

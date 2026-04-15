@@ -302,6 +302,7 @@ class VisualReportExercise {
   final double? previousVolume;
   final double? previousMaxWeight;
   final List<VisualReportTrainerComment> trainerComments;
+  final String? trainerMemo;
 
   const VisualReportExercise({
     required this.name,
@@ -311,6 +312,7 @@ class VisualReportExercise {
     this.previousVolume,
     this.previousMaxWeight,
     this.trainerComments = const [],
+    this.trainerMemo,
   });
 
   String get displayName => nameKo ?? name;
@@ -334,7 +336,7 @@ class VisualReportExercise {
     return maxWeight - previousMaxWeight!;
   }
 
-  bool get hasTrainerComments => trainerComments.isNotEmpty;
+  bool get hasTrainerComments => trainerComments.isNotEmpty || (trainerMemo != null && trainerMemo!.isNotEmpty);
 }
 
 /// Data class for individual set
@@ -510,8 +512,9 @@ final visualReportDataProvider =
 
       final prev = exerciseId != null ? previousData[exerciseId] : null;
 
-      // Parse trainer comments from notes JSON
+      // Parse trainer comments and memo from notes JSON
       List<VisualReportTrainerComment> trainerComments = [];
+      String? trainerMemo;
       if (exerciseNotes != null && exerciseNotes.isNotEmpty) {
         try {
           final notesData = jsonDecode(exerciseNotes) as Map<String, dynamic>;
@@ -521,6 +524,7 @@ final visualReportDataProvider =
                 .map((c) => VisualReportTrainerComment.fromJson(c as Map<String, dynamic>))
                 .toList();
           }
+          trainerMemo = notesData['trainerMemo'] as String?;
         } catch (e) {
           // Ignore JSON parsing errors
         }
@@ -534,6 +538,7 @@ final visualReportDataProvider =
         previousVolume: prev?['volume'] as double?,
         previousMaxWeight: prev?['maxWeight'] as double?,
         trainerComments: trainerComments,
+        trainerMemo: trainerMemo,
       ));
     }
 

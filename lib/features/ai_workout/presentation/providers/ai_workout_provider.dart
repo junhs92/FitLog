@@ -574,6 +574,24 @@ final similarExercisesProvider = FutureProvider.family<
   },
 );
 
+/// Provider for client's previously done exercises matching a movement group
+/// Parameters: ({String clientId, String exerciseId})
+final clientPreviousExercisesProvider = FutureProvider.family<
+    List<SessionAlternative>,
+    ({String clientId, String exerciseId})>(
+  (ref, params) async {
+    final repository = ref.read(aiWorkoutRepositoryProvider);
+    final result = await repository.getClientPreviousExercises(
+      clientId: params.clientId,
+      exerciseId: params.exerciseId,
+    );
+    return result.fold(
+      (_) => <SessionAlternative>[],
+      (exercises) => exercises,
+    );
+  },
+);
+
 /// Provider for alternative exercises (equipment + pattern variations)
 /// Returns exercises grouped by:
 /// 1. Different equipment (same movement pattern)

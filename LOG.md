@@ -4,6 +4,108 @@
 
 ---
 
+## 2026-02-17 ~ 2026-02-18
+
+### Client-Familiar Exercise Sorting (클라이언트 경험 운동 우선 정렬)
+
+#### 개요
+운동 선택기와 대체 운동 시트에서 클라이언트가 이전에 수행한 운동을 각 그룹 내에서 상단에 노출하도록 정렬 추가
+
+#### 새로운 기능
+
+1. **운동 선택기 Step 2/3 정렬**
+   - `_sortByClientHistory` 헬퍼 메서드 추가
+   - Family 드릴다운(Step 2 변형 필터, Step 3 최종 선택)에서 클라이언트 경험 운동 우선 정렬
+   - `recentExercisesProvider` 캐시 활용 (ref.read)
+
+2. **대체 운동 시트 섹션 1-3 정렬**
+   - `_sortByHistory` 헬퍼 메서드 추가
+   - 패턴 대체, 장비 그룹, 보조 운동 섹션 내 경험 운동 우선
+   - `recentExercisesProvider` 감시 (ref.watch)
+
+3. **"해본 운동" 섹션 — 복합 운동 우선**
+   - `_buildRecentExercisesSection`에서 compound 카테고리 운동을 상단에 정렬 후 상위 5개 선택
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `shared/widgets/exercise_picker_content.dart` | `_sortByClientHistory` 추가, Step 2/3에 적용, compound 우선 정렬 |
+| `ai_workout/presentation/widgets/difficulty_feedback_widget.dart` | `_sortByHistory` 추가, 섹션 1-3에 적용, `recentIds` watch |
+
+---
+
+### Alternative Exercise Sheet — Inline History & Dual-Action (대체 운동 기록 조회)
+
+#### 개요
+대체 운동 시트에서 운동 카드 탭과 '+' 버튼의 역할을 분리하여 기록 조회와 교체를 독립적으로 수행 가능하도록 변경
+
+#### 새로운 기능
+
+1. **카드 탭 → 기록 조회 (아코디언)**
+   - 카드 본체 탭 시 해당 운동의 최근 3개 세션 기록을 인라인으로 표시
+   - PR (Epley formula 기반 추정 1RM) + 세션별 세트 기록
+   - 단일 확장 모드: 하나의 카드 확장 시 다른 카드 자동 축소 (accordion pattern)
+   - `AlternativeExerciseBottomSheet`를 `ConsumerStatefulWidget`으로 전환, `_expandedExerciseId` 상태 관리
+
+2. **'+' 버튼 → 운동 교체**
+   - IconButton으로 분리하여 카드 탭 이벤트와 독립
+   - 기존 동작 유지 (운동 교체 후 시트 닫기)
+
+3. **`_AlternativeHistoryContent` 위젯**
+   - PR 골드 배너, 세션 블록, 세트 칩 표시
+   - `exercisePickerHistoryProvider` 활용
+
+4. **"클라이언트가 해본 운동" 전용 섹션 제거**
+   - 별도 섹션 대신 각 추천 섹션 내 정렬로 대체
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `ai_workout/presentation/widgets/difficulty_feedback_widget.dart` | `_AlternativeHistoryContent` 위젯, 아코디언 상태, `_buildClientPreviousSection` 제거 |
+| `ai_workout/data/datasources/ai_workout_remote_datasource.dart` | 대체 운동 쿼리 개선 |
+| `ai_workout/data/repositories/ai_workout_repository_impl.dart` | 리포지토리 구현 업데이트 |
+| `ai_workout/domain/repositories/ai_workout_repository.dart` | 인터페이스 메서드 추가 |
+| `ai_workout/presentation/providers/ai_workout_provider.dart` | 프로바이더 업데이트 |
+
+---
+
+### Exercise Recommendation & History Fixes (추천/기록 버그 수정)
+
+#### 수정 사항
+
+1. **"해본 운동" 기록 없음 표시 버그 수정**
+   - `getRecentExercises`가 활성 세션(미완료) 포함 → 기록 없는 운동 노출
+   - `.eq('status', 'completed')` 필터 추가하여 완료된 세션만 조회
+
+2. **보조 운동에 복합 운동 중복 표시 수정**
+   - `_scoreSupplementary`에서 compound 카테고리 운동 조기 반환 (score 0)
+   - 보완(1순위: compound) / 보조(2순위: isolation only) 역할 분리
+
+3. **PR 기반 기본값 초기화**
+   - `_loadExerciseHistory`에서 `lastSessionSets.last` 대신 `pr` 레코드 사용
+   - 목표 무게/횟수/RPE가 최고 기록 기준으로 설정
+
+4. **세션 완료 후 Provider 캐시 갱신 누락 수정**
+   - **문제**: 세션 완료 후 클라이언트 상세 화면에서 추천 운동과 근육 활동 맵이 갱신되지 않음
+   - **원인**: `completeSession` 성공 시 `clientRecentSessionsProvider`와 `clientMuscleMapProvider` 미갱신
+   - **증상**: 하체 세션 완료 후에도 추천이 하체 운동 표시, 근육 맵이 이전 세션(어깨) 데이터만 표시
+   - **수정**: `completeSession` 성공 핸들러에서 아래 Provider 즉시 무효화:
+     - `clientRecentSessionsProvider(clientId)` — 추천 계산용 최근 세션
+     - `recentExercisesProvider(clientId)` — "해본 운동" 섹션
+     - `clientMuscleMapProvider` (7일/14일/30일/전체) — 근육 활동 맵
+
+#### 수정된 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `active_session/data/datasources/session_remote_datasource.dart` | `getRecentExercises`에 `status = 'completed'` 필터 추가 |
+| `active_session/domain/services/exercise_recommendation_service.dart` | `_scoreSupplementary` compound 필터 추가 |
+| `active_session/presentation/providers/session_provider.dart` | PR 기반 기본값, `completeSession`에 Provider 무효화 6건 추가, `muscle_activity_provider` import |
+
+---
+
 ## 2026-02-16
 
 ### Exercise Picker — Inline History & Dual-Action Cards
@@ -743,6 +845,10 @@ Client 선택  → 코드 없이 회원가입 진행
 - [x] 클라이언트 운동 추천 카드
 - [x] 마스터 패널 접기/펴기
 - [x] 운동 선택기 인라인 기록 표시
+- [x] 클라이언트 경험 운동 우선 정렬 (선택기 + 대체 운동)
+- [x] 대체 운동 인라인 기록 + 아코디언 UX
+- [x] PR 기반 운동 기본값 초기화
+- [x] 세션 완료 후 Provider 캐시 갱신
 
 ### 진행 중
 - [ ] AI Workout 생성
@@ -775,4 +881,4 @@ Flutter는 `.env` 파일을 자동으로 읽지 않음. 반드시 `--dart-define
 
 ---
 
-*Last Updated: 2026-02-16*
+*Last Updated: 2026-02-18*

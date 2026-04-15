@@ -817,6 +817,108 @@ class AIWorkoutRemoteDataSource {
     );
   }
 
+  /// Get exercises the client has previously done in the same movement group
+  /// Returns unique exercises ordered by most recent usage
+  Future<List<SessionAlternative>> getClientPreviousExercises({
+    required String clientId,
+    required String exerciseId,
+  }) async {
+    debugPrint('🔄 [AI] getClientPreviousExercises for client: $clientId, exercise: $exerciseId');
+
+    // Step 1: Get original exercise's movement_group
+    final originalExercise = await _client
+        .from('exercises')
+        .select('movement_group')
+        .eq('id', exerciseId)
+        .single();
+
+    final movementGroup = originalExercise['movement_group'] as String?;
+    if (movementGroup == null || movementGroup.isEmpty) {
+      debugPrint('🔄 [AI] No movement group found, returning empty');
+      return [];
+    }
+
+    debugPrint('🔄 [AI] Looking for client exercises in movement_group: $movementGroup');
+
+    // Step 2: Get recent session IDs for this client
+    final sessionsResponse = await _client
+        .from('sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .order('started_at', ascending: false)
+        .limit(20);
+
+    final sessionIds = (sessionsResponse as List)
+        .map((s) => s['id'] as String)
+        .toList();
+
+    debugPrint('🔄 [AI] Found ${sessionIds.length} sessions for client');
+
+    if (sessionIds.isEmpty) return [];
+
+    // Step 3: Get exercise_ids from those sessions
+    final response = await _client
+        .from('session_exercises')
+        .select('exercise_id')
+        .inFilter('session_id', sessionIds)
+        .neq('exercise_id', exerciseId);
+
+    debugPrint('🔄 [AI] Raw session_exercises: ${(response as List).length} records');
+
+    // Deduplicate exercise IDs
+    final uniqueExerciseIds = <String>[];
+    final seen = <String>{};
+    for (final item in response as List) {
+      final exId = item['exercise_id'] as String;
+      if (!seen.contains(exId)) {
+        seen.add(exId);
+        uniqueExerciseIds.add(exId);
+      }
+    }
+
+    if (uniqueExerciseIds.isEmpty) {
+      debugPrint('🔄 [AI] No previous exercises found');
+      return [];
+    }
+
+    // Step 4: Fetch exercise details filtered by movement_group
+    final exercisesResponse = await _client
+        .from('exercises')
+        .select('id, name, name_ko, movement_group')
+        .inFilter('id', uniqueExerciseIds)
+        .eq('movement_group', movementGroup);
+
+    debugPrint('🔄 [AI] Matching exercises in movement_group: ${(exercisesResponse as List).length}');
+
+    // Build a lookup map
+    final exerciseMap = <String, Map<String, dynamic>>{};
+    for (final item in exercisesResponse) {
+      exerciseMap[item['id'] as String] = item as Map<String, dynamic>;
+    }
+
+    // Step 5: Build results in most-recent-first order
+    final alternatives = <SessionAlternative>[];
+    for (final exId in uniqueExerciseIds) {
+      final exercise = exerciseMap[exId];
+      if (exercise == null) continue;
+
+      alternatives.add(SessionAlternative(
+        exerciseId: exId,
+        exerciseName: exercise['name'] as String,
+        exerciseNameKo: exercise['name_ko'] as String?,
+        type: AlternativeType.samePattern,
+        reason: 'Previously done by client',
+        reasonKo: '클라이언트가 해본 운동',
+        isRecommended: false,
+      ));
+
+      if (alternatives.length >= 10) break;
+    }
+
+    debugPrint('🔄 [AI] Found ${alternatives.length} unique previous exercises');
+    return alternatives;
+  }
+
   /// Record exercise swap history
   Future<void> recordSwapHistory({
     required String clientId,

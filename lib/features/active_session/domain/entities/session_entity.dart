@@ -64,6 +64,9 @@ class SessionEntity {
   // Flag to indicate this is from client_schedules table (not sessions)
   final bool isFromSchedule;
 
+  // Session-level default rest timer (seconds)
+  final int restSeconds;
+
   const SessionEntity({
     required this.id,
     required this.trainerId,
@@ -91,6 +94,7 @@ class SessionEntity {
     this.savedAvgReps,
     this.savedAvgRpe,
     this.isFromSchedule = false,
+    this.restSeconds = 90,
   });
 
   /// Get total exercises count
@@ -166,6 +170,7 @@ class SessionEntity {
     double? savedAvgReps,
     double? savedAvgRpe,
     bool? isFromSchedule,
+    int? restSeconds,
   }) {
     return SessionEntity(
       id: id ?? this.id,
@@ -194,6 +199,7 @@ class SessionEntity {
       savedAvgReps: savedAvgReps ?? this.savedAvgReps,
       savedAvgRpe: savedAvgRpe ?? this.savedAvgRpe,
       isFromSchedule: isFromSchedule ?? this.isFromSchedule,
+      restSeconds: restSeconds ?? this.restSeconds,
     );
   }
 

@@ -121,6 +121,31 @@ enum MuscleGroup {
     }
   }
 
+  /// Whether this muscle is in the upper body region
+  bool get isUpperBody {
+    switch (this) {
+      case MuscleGroup.chest:
+      case MuscleGroup.back:
+      case MuscleGroup.shoulders:
+      case MuscleGroup.biceps:
+      case MuscleGroup.triceps:
+      case MuscleGroup.forearms:
+      case MuscleGroup.core:
+      case MuscleGroup.abs:
+      case MuscleGroup.lats:
+      case MuscleGroup.traps:
+        return true;
+      case MuscleGroup.quadriceps:
+      case MuscleGroup.hamstrings:
+      case MuscleGroup.glutes:
+      case MuscleGroup.calves:
+      case MuscleGroup.adductors:
+        return false;
+      case MuscleGroup.fullBody:
+        return true;
+    }
+  }
+
   /// Get muscle groups that are expanded from fullBody
   static List<MuscleGroup> get fullBodyMuscles => [
         MuscleGroup.chest,

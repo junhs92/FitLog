@@ -86,9 +86,9 @@ class RpeSlider extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         children: [

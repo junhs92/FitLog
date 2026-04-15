@@ -39,7 +39,7 @@ class RecentSessionsCard extends ConsumerWidget {
       BuildContext context, List<SessionEntity> sessions) {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
@@ -100,14 +100,15 @@ class RecentSessionsCard extends ConsumerWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.neutralBlack,
+                  color: AppColors.darkTextPrimary,
                 ),
               ),
               Text(
                 '최근 완료한 세션',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.neutral500,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -149,12 +150,12 @@ class _SessionCardState extends State<_SessionCard> {
     return Container(
       margin: EdgeInsets.only(bottom: widget.isLast ? 0 : AppSpacing.sm),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: _isExpanded
               ? focusColor.withValues(alpha: 0.3)
-              : AppColors.neutral200,
+              : AppColors.darkBorder,
           width: 1,
         ),
         boxShadow: [
@@ -207,7 +208,8 @@ class _SessionCardState extends State<_SessionCard> {
                               : '날짜 없음',
                           style: const TextStyle(
                             fontSize: 13,
-                            color: AppColors.neutral600,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.darkTextSecondary,
                           ),
                         ),
                         const SizedBox(width: 4),
@@ -233,7 +235,7 @@ class _SessionCardState extends State<_SessionCard> {
                         Container(
                           width: 1,
                           height: 28,
-                          color: AppColors.neutral200,
+                          color: AppColors.darkBorder,
                         ),
                         _StatItem(
                           value: '$totalSets',
@@ -242,7 +244,7 @@ class _SessionCardState extends State<_SessionCard> {
                         Container(
                           width: 1,
                           height: 28,
-                          color: AppColors.neutral200,
+                          color: AppColors.darkBorder,
                         ),
                         _StatItem(
                           value: _formatVolume(totalVolume),
@@ -252,7 +254,7 @@ class _SessionCardState extends State<_SessionCard> {
                           Container(
                             width: 1,
                             height: 28,
-                            color: AppColors.neutral200,
+                            color: AppColors.darkBorder,
                           ),
                           _StatItem(
                             value: '${session.prCount}',
@@ -305,7 +307,7 @@ class _SessionCardState extends State<_SessionCard> {
         children: [
           Divider(
             height: 1,
-            color: AppColors.neutral200,
+            color: AppColors.darkBorder,
           ),
           const SizedBox(height: 12),
           ...exercisesWithSets.map((exercise) => _ExerciseRow(
@@ -409,7 +411,7 @@ class _StatItem extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: isHighlighted
                   ? const Color(0xFFFF9800)
-                  : AppColors.neutralBlack,
+                  : AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: 2),
@@ -417,9 +419,10 @@ class _StatItem extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 11,
+              fontWeight: FontWeight.w500,
               color: isHighlighted
                   ? const Color(0xFFFFB74D)
-                  : AppColors.neutral500,
+                  : AppColors.darkTextTertiary,
             ),
           ),
         ],
@@ -459,7 +462,7 @@ class _ExerciseRow extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     color: hasPR
                         ? const Color(0xFFE65100)
-                        : AppColors.neutral800,
+                        : AppColors.darkTextPrimary,
                   ),
                 ),
               ),
@@ -486,8 +489,8 @@ class _ExerciseRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: isPR
-            ? const Color(0xFFFFF8E1)
-            : AppColors.neutral100,
+            ? const Color(0xFF2A2518)
+            : AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -495,7 +498,7 @@ class _ExerciseRow extends StatelessWidget {
         style: TextStyle(
           fontSize: 12,
           fontWeight: isPR ? FontWeight.w600 : FontWeight.w500,
-          color: isPR ? const Color(0xFFE65100) : AppColors.neutral700,
+          color: isPR ? const Color(0xFFE65100) : AppColors.darkTextSecondary,
         ),
       ),
     );

@@ -44,12 +44,12 @@ class ClientMuscleMapEntity {
   /// Get intensity for a specific muscle group (0.0 if not found)
   double getIntensity(MuscleGroup group) => activities[group]?.intensity ?? 0.0;
 
-  /// Get all muscles that need attention (5+ days since worked)
+  /// Get all muscles that need attention (not worked in the time period)
   List<MuscleActivityEntity> get musclesNeedingAttention {
     return activities.values
         .where((a) => a.needsAttention)
         .toList()
-      ..sort((a, b) => (b.daysSinceWorked ?? 999).compareTo(a.daysSinceWorked ?? 999));
+      ..sort((a, b) => a.muscleGroup.displayNameKo.compareTo(b.muscleGroup.displayNameKo));
   }
 
   /// Get all muscles worked recently (within 2 days)

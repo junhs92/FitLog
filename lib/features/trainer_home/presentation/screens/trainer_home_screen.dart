@@ -195,7 +195,7 @@ class TrainerHomeScreen extends ConsumerWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 8,
-                backgroundColor: AppColors.neutral300,
+                backgroundColor: AppColors.darkBorder,
                 valueColor: AlwaysStoppedAnimation<Color>(
                   deducted == total && total > 0
                       ? AppColors.success

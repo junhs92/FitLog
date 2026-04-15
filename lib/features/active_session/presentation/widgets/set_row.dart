@@ -23,7 +23,7 @@ class SetRow extends StatelessWidget {
     return Material(
       color: set.isWarmup
           ? AppColors.info.withOpacity(0.1)
-          : AppColors.surfaceLight,
+          : AppColors.darkBackground,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: InkWell(
         onTap: onTap,
@@ -42,7 +42,7 @@ class SetRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: set.isPR
                       ? const Color(0xFFFFD700)
-                      : AppColors.neutral300,
+                      : AppColors.darkBorder,
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
@@ -52,7 +52,7 @@ class SetRow extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: set.isPR
-                        ? AppColors.neutralBlack
+                        ? AppColors.darkTextPrimary
                         : AppColors.neutral700,
                   ),
                 ),
@@ -164,7 +164,7 @@ class _SetValueDisplay extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: color ?? AppColors.neutralBlack,
+            color: color ?? AppColors.darkTextPrimary,
           ),
         ),
         Text(

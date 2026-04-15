@@ -8,6 +8,7 @@ import '../../features/active_session/domain/entities/exercise_set_entity.dart';
 import '../../features/active_session/domain/services/exercise_recommendation_service.dart';
 import '../../features/active_session/presentation/providers/session_provider.dart';
 import '../../features/active_session/presentation/providers/exercise_picker_provider.dart';
+import '../../features/ai_workout/presentation/providers/ai_workout_provider.dart';
 import 'common/exercise_gif_image.dart';
 
 /// Extracted content widget for exercise picker
@@ -42,6 +43,23 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
         _expandedExerciseIds.add(exerciseId);
       }
     });
+  }
+
+  /// Sort exercises so that ones the client has done before appear first.
+  /// Uses ref.read (not watch) — the value is already cached from _buildRecentExercisesSection.
+  List<ExerciseEntity> _sortByClientHistory(List<ExerciseEntity> exercises) {
+    final clientId = widget.clientId;
+    if (clientId == null) return exercises;
+    final recentIds = ref.read(recentExercisesProvider(clientId))
+        .valueOrNull?.map((e) => e.id).toSet() ?? <String>{};
+    if (recentIds.isEmpty) return exercises;
+    final sorted = List<ExerciseEntity>.from(exercises);
+    sorted.sort((a, b) {
+      final aDone = recentIds.contains(a.id) ? 0 : 1;
+      final bDone = recentIds.contains(b.id) ? 0 : 1;
+      return aDone.compareTo(bDone);
+    });
+    return sorted;
   }
 
   @override
@@ -240,17 +258,20 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
     return ListView(
       padding: const EdgeInsets.only(bottom: AppSpacing.xl),
       children: [
+        // Client's recent exercises (최근 운동)
+        _buildRecentExercisesSection(clientId),
+
         // Contextual recommendations section (only shows when session is active)
         if (contextualFamilies.isNotEmpty || contextualRecs.hasComplementary || contextualRecs.hasSupplementary) ...[
           _buildContextualSection(contextualRecs),
         ],
 
-        // All families sorted by score
-        if (otherFamilies.isNotEmpty) ...[
+        // Compound families (주요 운동)
+        if (otherFamilies.any((f) => f.isCompound)) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
             child: Text(
-              '전체 운동',
+              '주요 운동',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -258,7 +279,31 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
               ),
             ),
           ),
-          ...otherFamilies.map((family) => _buildFamilyCard(family)),
+          ...otherFamilies.where((f) => f.isCompound).map((family) => _buildFamilyCard(family)),
+        ],
+
+        // Accessory families (보조 운동) with neglect detection
+        if (otherFamilies.any((f) => f.isAccessory)) ...[
+          _buildAccessorySectionHeader(clientId),
+          ...otherFamilies.where((f) => f.isAccessory).map(
+            (family) => _buildFamilyCardWithNeglect(family, clientId),
+          ),
+        ],
+
+        // Mobility families (모빌리티)
+        if (otherFamilies.any((f) => f.isMobility)) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+            child: Text(
+              '모빌리티',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.neutral600,
+              ),
+            ),
+          ),
+          ...otherFamilies.where((f) => f.isMobility).map((family) => _buildFamilyCard(family)),
         ],
 
         // Custom exercises section
@@ -298,6 +343,174 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
         );
       },
     );
+  }
+
+  /// Recent exercises section for Step 1
+  /// Shows exercises the client has done before, filtered by current split
+  Widget _buildRecentExercisesSection(String clientId) {
+    final recentAsync = ref.watch(recentExercisesProvider(clientId));
+    final programAsync = ref.watch(activeProgramProvider(clientId));
+
+    return recentAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (exercises) {
+        if (exercises.isEmpty) return const SizedBox.shrink();
+
+        // Filter by current split's movement groups
+        final program = programAsync.valueOrNull;
+        final focusGroups = program != null
+            ? ExerciseRecommendationService.getMovementGroupsForFocus(
+                program.suggestedNextFocus)
+            : <String>[];
+
+        final focused = focusGroups.isNotEmpty
+            ? exercises
+                .where((e) => focusGroups.contains(e.movementGroup))
+                .toList()
+            : exercises.toList();
+
+        // Sort compound exercises first, then take top 5
+        focused.sort((a, b) {
+          final aCompound = a.category == ExerciseCategory.compound ? 0 : 1;
+          final bCompound = b.category == ExerciseCategory.compound ? 0 : 1;
+          return aCompound.compareTo(bCompound);
+        });
+        final filtered = focused.take(5).toList();
+
+        if (filtered.isEmpty) return const SizedBox.shrink();
+
+        // Build subtitle based on current focus
+        final subtitleText = program?.suggestedNextFocus != null
+            ? _getFocusLabel(program!.suggestedNextFocus!)
+            : '이전에 수행한 운동';
+
+        const color = AppColors.neutral700;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.history, size: 14, color: AppColors.neutralWhite),
+                        SizedBox(width: 4),
+                        Text(
+                          '해본 운동',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.neutralWhite,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    subtitleText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AppColors.neutral500,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (final exercise in filtered)
+              _buildRecentExerciseTile(exercise, clientId),
+            const Divider(height: 16),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentExerciseTile(ExerciseEntity exercise, String? clientId) {
+    final isExpanded = _expandedExerciseIds.contains(exercise.id);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 2),
+      child: Material(
+        color: AppColors.neutral700.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        child: Column(
+          children: [
+            ListTile(
+              dense: true,
+              leading: exercise.hasGif
+                  ? ExerciseGifThumbnail(imageUrl: exercise.imageUrl, size: 36)
+                  : Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: AppColors.neutral700.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.fitness_center, color: AppColors.neutral700, size: 18),
+                    ),
+              title: Text(exercise.displayName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              subtitle: Row(
+                children: [
+                  Text(exercise.muscleGroup ?? '', style: const TextStyle(fontSize: 11)),
+                  if (exercise.equipment != null) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppColors.neutral700.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        _getEquipmentDisplayKo(exercise.equipment!),
+                        style: const TextStyle(fontSize: 10, color: AppColors.neutral600, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.add_circle, color: AppColors.neutral700, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => widget.onExerciseSelected(exercise),
+              ),
+              onTap: clientId != null ? () => _toggleExpanded(exercise.id) : () => widget.onExerciseSelected(exercise),
+            ),
+            _buildInlineHistory(exercise.id, clientId, isExpanded),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getFocusLabel(String focus) {
+    switch (focus) {
+      case 'push':
+        return '밀기 운동 중 해본 운동';
+      case 'pull':
+        return '당기기 운동 중 해본 운동';
+      case 'legs':
+        return '하체 운동 중 해본 운동';
+      case 'upper':
+        return '상체 운동 중 해본 운동';
+      case 'lower':
+        return '하체 운동 중 해본 운동';
+      case 'full_body':
+        return '이전에 수행한 운동';
+      default:
+        return '이전에 수행한 운동';
+    }
   }
 
   /// Contextual recommendations section (complementary/supplementary)
@@ -362,7 +575,7 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text('마무리 운동', style: TextStyle(fontSize: 11, color: AppColors.success.withValues(alpha: 0.8), fontWeight: FontWeight.w500)),
+              Text('보조 운동', style: TextStyle(fontSize: 11, color: AppColors.success.withValues(alpha: 0.8), fontWeight: FontWeight.w500)),
             ],
           ),
         ),
@@ -433,16 +646,69 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
     );
   }
 
+  /// Accessory section header with optional neglect badge
+  Widget _buildAccessorySectionHeader(String? clientId) {
+    final neglectedGroups = clientId != null
+        ? ref.watch(neglectedAccessoriesProvider(clientId))
+        : <String>{};
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
+      child: Row(
+        children: [
+          Text(
+            '보조 운동',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.neutral600,
+            ),
+          ),
+          if (neglectedGroups.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '소홀한 부위!',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.warning,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Family card with neglect indicator for accessory exercises
+  Widget _buildFamilyCardWithNeglect(ScoredFamily family, String? clientId) {
+    final neglectedGroups = clientId != null
+        ? ref.watch(neglectedAccessoriesProvider(clientId))
+        : <String>{};
+    final isNeglected = family.muscleGroup != null &&
+        neglectedGroups.contains(family.muscleGroup);
+    return _buildFamilyCard(family, isNeglected: isNeglected);
+  }
+
   /// Family card for Step 1
-  Widget _buildFamilyCard(ScoredFamily family) {
+  Widget _buildFamilyCard(ScoredFamily family, {bool isNeglected = false}) {
     final isRecommended = family.score > 50;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 3),
       child: Material(
-        color: isRecommended
-            ? AppColors.success.withValues(alpha: 0.04)
-            : AppColors.surfaceLight,
+        color: isNeglected
+            ? AppColors.warning.withValues(alpha: 0.06)
+            : isRecommended
+                ? AppColors.success.withValues(alpha: 0.04)
+                : AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -487,9 +753,24 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        family.displayNameKo,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      Row(
+                        children: [
+                          Text(
+                            family.displayNameKo,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          if (isNeglected) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: AppColors.warning,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Row(
@@ -498,7 +779,20 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
                             family.muscleGroup ?? MovementGroup.getDisplayNameKo(family.movementGroup),
                             style: const TextStyle(fontSize: 12, color: AppColors.neutral600),
                           ),
-                          if (family.reason.isNotEmpty) ...[
+                          if (isNeglected) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.warning.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '소홀',
+                                style: TextStyle(fontSize: 10, color: AppColors.warning, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ] else if (family.reason.isNotEmpty) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -548,7 +842,7 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
   // =============================================================
   Widget _buildStep2VariationFilter(ExercisePickerState pickerState) {
     final pickerNotifier = ref.read(exercisePickerProvider.notifier);
-    final filteredExercises = pickerNotifier.getFilteredExercises();
+    final filteredExercises = _sortByClientHistory(pickerNotifier.getFilteredExercises());
 
     final showAngle = pickerNotifier.hasMultipleOptions('angle');
     final showEquipment = pickerNotifier.hasMultipleOptions('equipment');
@@ -685,7 +979,7 @@ class _ExercisePickerContentState extends ConsumerState<ExercisePickerContent> {
   // =============================================================
   Widget _buildStep3FinalSelection(ExercisePickerState pickerState) {
     final pickerNotifier = ref.read(exercisePickerProvider.notifier);
-    final exercises = pickerNotifier.getFilteredExercises();
+    final exercises = _sortByClientHistory(pickerNotifier.getFilteredExercises());
 
     if (exercises.isEmpty) {
       return const Center(child: Text('선택 가능한 운동이 없습니다', style: TextStyle(color: AppColors.neutral500)));

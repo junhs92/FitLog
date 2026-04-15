@@ -33,7 +33,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
   Widget _buildLoadingState() {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -56,7 +56,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
   Widget _buildEmptyState() {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -67,7 +67,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
-                color: AppColors.neutral100,
+                color: AppColors.darkSurfaceCard,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: const Row(
@@ -94,7 +94,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
   Widget _buildCard(List<FamilyRecommendationItem> items) {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -106,7 +106,8 @@ class ExerciseRecommendationCard extends ConsumerWidget {
               '오늘의 추천 운동 패밀리',
               style: TextStyle(
                 fontSize: 12,
-                color: AppColors.neutral500,
+                fontWeight: FontWeight.w500,
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -118,7 +119,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
                   if (index > 0)
                     Divider(
                       height: 1,
-                      color: AppColors.neutral200,
+                      color: AppColors.darkBorder,
                     ),
                   _FamilyItem(item: item),
                 ],
@@ -136,7 +137,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
         const Icon(
           Icons.fitness_center,
           size: 18,
-          color: AppColors.neutral600,
+          color: AppColors.primary,
         ),
         const SizedBox(width: AppSpacing.xs),
         const Expanded(
@@ -145,7 +146,7 @@ class ExerciseRecommendationCard extends ConsumerWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
         ),
@@ -189,7 +190,7 @@ class _FamilyItem extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
               ),
@@ -228,7 +229,7 @@ class _FamilyItem extends StatelessWidget {
                         '· ',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.neutral600,
+                          color: AppColors.darkTextTertiary,
                         ),
                       ),
                       Expanded(

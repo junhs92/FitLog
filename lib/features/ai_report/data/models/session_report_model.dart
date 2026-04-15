@@ -17,6 +17,9 @@ class SessionReportModel extends SessionReportEntity {
     super.sentAt,
     super.viewedAt,
     super.htmlUrl,
+    super.pdfUrl,
+    super.emailSentAt,
+    super.pushSentAt,
   });
 
   factory SessionReportModel.fromJson(Map<String, dynamic> json) {
@@ -51,6 +54,13 @@ class SessionReportModel extends SessionReportEntity {
           ? DateTime.parse(json['viewed_at'] as String)
           : null,
       htmlUrl: json['html_url'] as String?,
+      pdfUrl: json['pdf_url'] as String?,
+      emailSentAt: json['email_sent_at'] != null
+          ? DateTime.parse(json['email_sent_at'] as String)
+          : null,
+      pushSentAt: json['push_sent_at'] != null
+          ? DateTime.parse(json['push_sent_at'] as String)
+          : null,
     );
   }
 
@@ -80,6 +90,9 @@ class SessionReportModel extends SessionReportEntity {
       'sent_at': sentAt?.toIso8601String(),
       'viewed_at': viewedAt?.toIso8601String(),
       'html_url': htmlUrl,
+      'pdf_url': pdfUrl,
+      'email_sent_at': emailSentAt?.toIso8601String(),
+      'push_sent_at': pushSentAt?.toIso8601String(),
     };
   }
 
@@ -99,6 +112,9 @@ class SessionReportModel extends SessionReportEntity {
       sentAt: entity.sentAt,
       viewedAt: entity.viewedAt,
       htmlUrl: entity.htmlUrl,
+      pdfUrl: entity.pdfUrl,
+      emailSentAt: entity.emailSentAt,
+      pushSentAt: entity.pushSentAt,
     );
   }
 }

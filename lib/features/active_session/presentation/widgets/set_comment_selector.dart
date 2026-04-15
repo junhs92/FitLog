@@ -109,9 +109,9 @@ class _SetCommentSelectorState extends State<SetCommentSelector> {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +332,7 @@ class _ConditionDetailInput extends StatelessWidget {
           child: Container(
             height: 36,
             decoration: BoxDecoration(
-              color: AppColors.neutral100,
+              color: AppColors.darkSurfaceCard,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: categoryColor.withOpacity(0.3)),
             ),
@@ -341,7 +341,7 @@ class _ConditionDetailInput extends StatelessWidget {
               onChanged: onChanged,
               style: const TextStyle(
                 fontSize: 13,
-                color: AppColors.neutral900,
+                color: AppColors.darkTextSecondary,
               ),
               decoration: InputDecoration(
                 hintText: _getHintText(comment),

@@ -38,7 +38,7 @@ class LifestyleSummaryCard extends ConsumerWidget {
   Widget _buildLoadingState() {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -61,7 +61,7 @@ class LifestyleSummaryCard extends ConsumerWidget {
   Widget _buildEmptyState(BuildContext context) {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
@@ -72,7 +72,7 @@ class LifestyleSummaryCard extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(AppSpacing.lg),
               decoration: BoxDecoration(
-                color: AppColors.neutral100,
+                color: AppColors.darkSurfaceCard,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: const Row(
@@ -99,7 +99,7 @@ class LifestyleSummaryCard extends ConsumerWidget {
   Widget _buildSummaryCard(BuildContext context, LifestyleSummaryEntity summary) {
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => showLifestyleDetailSheet(context, clientId),
@@ -213,7 +213,7 @@ class LifestyleSummaryCard extends ConsumerWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
         ),
@@ -344,7 +344,7 @@ class _MetricSection extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
               ),
@@ -417,7 +417,7 @@ class _WeekDayIndicator extends StatelessWidget {
                 shape: BoxShape.circle,
                 color: isLogged ? color : Colors.transparent,
                 border: Border.all(
-                  color: isLogged ? color : AppColors.neutral300,
+                  color: isLogged ? color : AppColors.darkBorder,
                   width: 1.5,
                 ),
               ),

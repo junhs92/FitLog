@@ -51,9 +51,9 @@ class RepSelector extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         children: [
@@ -74,7 +74,7 @@ class RepSelector extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                      color: AppColors.darkTextPrimary,
                     ),
                   ),
                 ),
@@ -131,7 +131,7 @@ class RepSelector extends StatelessWidget {
                 vertical: AppSpacing.md,
               ),
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
+                color: AppColors.darkSurfaceElevated,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Row(
@@ -144,7 +144,7 @@ class RepSelector extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                      color: AppColors.darkTextPrimary,
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
@@ -239,7 +239,7 @@ class _QuickRepButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? AppColors.primary : AppColors.neutral100,
+      color: isSelected ? AppColors.primary : AppColors.darkSurfaceCard,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: InkWell(
         onTap: onTap,
@@ -253,7 +253,7 @@ class _QuickRepButton extends StatelessWidget {
             style: TextStyle(
               fontSize: compact ? 12 : 18,
               fontWeight: FontWeight.bold,
-              color: isSelected ? AppColors.neutralWhite : AppColors.neutralBlack,
+              color: isSelected ? AppColors.neutralWhite : AppColors.darkTextPrimary,
             ),
           ),
         ),

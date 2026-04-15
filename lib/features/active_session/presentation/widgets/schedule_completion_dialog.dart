@@ -54,17 +54,27 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
   @override
   void initState() {
     super.initState();
-    _selectedTime = TimeOfDay.fromDateTime(widget.sessionStartTime.toLocal());
+    final suggestedStart = DateTime.now().subtract(const Duration(hours: 1));
+    final minute = suggestedStart.minute;
+    final roundedMinute = (minute < 15) ? 0 : (minute < 45) ? 30 : 0;
+    final roundedHour = (minute >= 45) ? (suggestedStart.hour + 1) % 24 : suggestedStart.hour;
+    _selectedTime = TimeOfDay(hour: roundedHour, minute: roundedMinute);
   }
 
   DateTime get _scheduledDateTime {
-    return DateTime(
+    final base = DateTime(
       widget.sessionStartTime.year,
       widget.sessionStartTime.month,
       widget.sessionStartTime.day,
       _selectedTime.hour,
       _selectedTime.minute,
     );
+    // If rounding pushed past midnight (e.g. 23:50 → 0:00), advance to next day
+    if (widget.sessionStartTime.toLocal().hour == 23 &&
+        _selectedTime.hour == 0) {
+      return base.add(const Duration(days: 1));
+    }
+    return base;
   }
 
   Future<void> _selectTime() async {
@@ -136,7 +146,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
           Text(
             'No scheduled appointment was found for this session with ${widget.clientName}.',
             style: TextStyle(
-              color: Colors.grey[600],
+              color: AppColors.darkTextTertiary,
               fontSize: 14,
             ),
           ),
@@ -144,7 +154,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
           Text(
             'Would you like to add it to the calendar?',
             style: TextStyle(
-              color: Colors.grey[800],
+              color: AppColors.darkTextSecondary,
               fontSize: 14,
             ),
           ),
@@ -154,12 +164,12 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
           Container(
             padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: BoxDecoration(
-              color: Colors.grey[100],
+              color: AppColors.darkSurfaceCard,
               borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
             ),
             child: Row(
               children: [
-                const Icon(Icons.event, size: 18, color: Colors.grey),
+                Icon(Icons.event, size: 18, color: AppColors.darkTextTertiary),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
                   _formatDate(widget.sessionStartTime),
@@ -177,7 +187,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
             child: Container(
               padding: const EdgeInsets.all(AppSpacing.sm),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: AppColors.darkSurfaceCard,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
                 border: Border.all(color: AppColors.primary.withOpacity(0.3)),
               ),
@@ -197,14 +207,14 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
                     'Tap to change',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey[500],
+                      color: AppColors.darkTextTertiary,
                     ),
                   ),
                   const SizedBox(width: 4),
                   Icon(
                     Icons.edit,
                     size: 14,
-                    color: Colors.grey[500],
+                    color: AppColors.darkTextTertiary,
                   ),
                 ],
               ),
@@ -217,7 +227,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
             'Duration',
             style: TextStyle(
               fontSize: 12,
-              color: Colors.grey[600],
+              color: AppColors.darkTextTertiary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -238,7 +248,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
                 },
                 selectedColor: AppColors.primary.withOpacity(0.2),
                 labelStyle: TextStyle(
-                  color: isSelected ? AppColors.primary : Colors.grey[700],
+                  color: isSelected ? AppColors.primary : AppColors.darkTextSecondary,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   fontSize: 13,
                 ),
@@ -252,7 +262,7 @@ class _ScheduleCompletionDialogState extends State<ScheduleCompletionDialog> {
           onPressed: () => Navigator.pop(context, null),
           child: Text(
             'Skip',
-            style: TextStyle(color: Colors.grey[600]),
+            style: TextStyle(color: AppColors.darkTextTertiary),
           ),
         ),
         ElevatedButton.icon(

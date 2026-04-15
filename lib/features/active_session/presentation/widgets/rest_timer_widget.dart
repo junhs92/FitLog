@@ -38,7 +38,7 @@ class RestTimerCompact extends ConsumerWidget {
               child: CircularProgressIndicator(
                 value: timerState.progress,
                 strokeWidth: 2,
-                backgroundColor: AppColors.neutral300,
+                backgroundColor: AppColors.darkBorder,
                 valueColor: AlwaysStoppedAnimation(
                   timerState.remainingSeconds <= 10
                       ? AppColors.warning
@@ -83,9 +83,9 @@ class RestTimerWidget extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -165,7 +165,7 @@ class _TimerDisplay extends StatelessWidget {
             child: CircularProgressIndicator(
               value: 1.0,
               strokeWidth: 8,
-              backgroundColor: AppColors.neutral200,
+              backgroundColor: AppColors.darkBorder,
               valueColor: const AlwaysStoppedAnimation(Colors.transparent),
             ),
           ),
@@ -199,7 +199,7 @@ class _TimerDisplay extends StatelessWidget {
                       ? AppColors.success
                       : isWarning
                           ? AppColors.warning
-                          : AppColors.neutralBlack,
+                          : AppColors.darkTextPrimary,
                 ),
               ),
               if (isComplete)
@@ -252,7 +252,7 @@ class _TimerControls extends StatelessWidget {
           icon: const Icon(Icons.refresh),
           tooltip: 'Reset',
           style: IconButton.styleFrom(
-            backgroundColor: AppColors.neutral100,
+            backgroundColor: AppColors.darkSurfaceCard,
           ),
         ),
 
@@ -297,7 +297,7 @@ class _TimerControls extends StatelessWidget {
 
         // Add 30s button with label
         Material(
-          color: AppColors.neutral100,
+          color: AppColors.darkSurfaceCard,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             onTap: onAddTime,
@@ -320,7 +320,7 @@ class _TimerControls extends StatelessWidget {
         if (onSkip != null && (isRunning || isPaused)) ...[
           const SizedBox(width: 16),
           Material(
-            color: AppColors.neutral200,
+            color: AppColors.darkBorder,
             borderRadius: BorderRadius.circular(8),
             child: InkWell(
               onTap: onSkip,
@@ -384,7 +384,7 @@ class _PresetButtons extends StatelessWidget {
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 color: isSelected ? AppColors.neutralWhite : AppColors.neutral700,
               ),
-              backgroundColor: AppColors.neutral100,
+              backgroundColor: AppColors.darkSurfaceCard,
               selectedColor: AppColors.primary,
               visualDensity: VisualDensity.compact,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -414,7 +414,7 @@ class RestTimerBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -426,7 +426,7 @@ class RestTimerBottomSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppColors.neutral300,
+              color: AppColors.darkBorder,
               borderRadius: BorderRadius.circular(2),
             ),
           ),

@@ -1,0 +1,689 @@
+FRONTEND GAPS - TECHNICAL SPECIFICATION FOR BACKEND ARCHITECT
+FitLog Pro Database Backend
+Prepared: 2026-04-14
+
+==============================================================================
+OVERVIEW
+==============================================================================
+
+This document identifies all gaps between the database schema and frontend
+implementation. It's organized for backend team to understand what frontend
+needs and what's already built on the DB side.
+
+Status: Ready for implementation - no DB schema changes needed, only frontend
+        model and datasource additions.
+
+==============================================================================
+GAP 1: SESSION EXERCISE FEEDBACK TRACKING
+==============================================================================
+
+LOCATION: Frontend needs to expose session_exercise_feedback table
+
+DB Status: ✓ TABLE EXISTS AND IS FULLY FUNCTIONAL
+Location: session_feedback table (created in 20251218 migration)
+
+Columns:
+  id UUID PRIMARY KEY
+  session_exercise_id UUID NOT NULL (FK to session_exercises)
+  exercise_id UUID NOT NULL (FK to exercises)
+  feedback TEXT NOT NULL CHECK (feedback IN ('too_easy', 'just_right', 'challenging', 'struggling'))
+  notes TEXT
+  created_at TIMESTAMPTZ DEFAULT NOW()
+
+Indexes: Present for session_exercise_id and exercise_id lookups
+RLS: ✓ Properly restricted to trainers for their own sessions
+
+---
+
+FRONTEND STATUS: ❌ NO ENTITY EXISTS
+
+What needs to be created:
+
+A) SessionExerciseFeedbackEntity
+   Location: lib/features/active_session/domain/entities/session_exercise_feedback_entity.dart
+
+   Fields:
+   ```
+   class SessionExerciseFeedbackEntity {
+     final String id;
+     final String sessionExerciseId;
+     final String exerciseId;
+     final ExerciseFeedback feedback;  // enum: tooeasy, justright, challenging, struggling
+     final String? notes;
+     final DateTime createdAt;
+   }
+   ```
+
+B) ExerciseFeedback Enum
+   ```
+   enum ExerciseFeedback {
+     tooEasy('too_easy'),
+     justRight('just_right'),
+     challenging('challenging'),
+     struggling('struggling');
+
+     final String id;
+     ...
+   }
+   ```
+
+C) SessionExerciseFeedbackModel
+   Location: lib/features/active_session/data/models/session_exercise_feedback_model.dart
+
+   With fromJson(), toJson(), fromEntity() methods
+
+---
+
+DATASOURCE STATUS: ❌ NO METHODS EXPOSED
+
+Add to SessionRemoteDataSource:
+
+```dart
+// Log difficulty feedback for an exercise
+Future<SessionExerciseFeedbackModel> logExerciseFeedback({
+  required String sessionExerciseId,
+  required String exerciseId,
+  required ExerciseFeedback feedback,
+  String? notes,
+}) async {
+  final data = await _client.from('session_exercise_feedback').insert({
+    'session_exercise_id': sessionExerciseId,
+    'exercise_id': exerciseId,
+    'feedback': feedback.id,
+    'notes': notes,
+  }).select().single();
+
+  return SessionExerciseFeedbackModel.fromJson(data);
+}
+
+// Get feedback history for an exercise
+Future<List<SessionExerciseFeedbackModel>> getExerciseFeedbackHistory({
+  required String exerciseId,
+  required String clientId,
+  Duration timeWindow = const Duration(days: 30),
+}) async {
+  final sinceDate = DateTime.now().subtract(timeWindow).toUtc().toIso8601String();
+
+  final data = await _client
+    .from('session_exercise_feedback')
+    .select('''
+      id, session_exercise_id, exercise_id, feedback, notes, created_at
+    ''')
+    .eq('exercise_id', exerciseId)
+    .filter('created_at', 'gte', sinceDate)
+    .order('created_at', ascending: false);
+
+  return (data as List)
+    .map((json) => SessionExerciseFeedbackModel.fromJson(json))
+    .toList();
+}
+
+// Get feedback summary for a specific exercise in a client's training
+Future<Map<ExerciseFeedback, int>> getFeedbackSummary({
+  required String exerciseId,
+  required String clientId,
+}) async {
+  final feedback = await getExerciseFeedbackHistory(
+    exerciseId: exerciseId,
+    clientId: clientId,
+  );
+
+  // Count occurrences of each feedback type
+  final summary = <ExerciseFeedback, int>{};
+  for (final item in feedback) {
+    summary[item.feedback] = (summary[item.feedback] ?? 0) + 1;
+  }
+
+  return summary;
+}
+```
+
+---
+
+USE CASE: During active session
+
+When trainer completes a session, they can mark exercises as:
+- Too easy -> suggests increase weight/reps next time
+- Just right -> confirms programming is on track
+- Challenging -> might need form cues
+- Struggling -> suggests reduce weight or swap exercise
+
+Frontend doesn't currently capture this feedback. Should add optional feedback
+dialog at end of each exercise in session review.
+
+---
+
+IMPACT: HIGH
+
+Feedback data is critical for:
+1. Exercise recommendation engine fine-tuning
+2. Showing trainers patterns (e.g., "Barbell Squat marked as too easy 3x in last month")
+3. Automated progression suggestions
+4. Identifying exercises that need better cuing/instruction
+
+---
+
+DATABASE QUERY READY? YES
+
+Test query to verify data flow:
+```sql
+SELECT
+  id, session_exercise_id, exercise_id, feedback, notes, created_at
+FROM session_exercise_feedback
+WHERE exercise_id = 'your-exercise-uuid'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+==============================================================================
+GAP 2: EXERCISE SWAP HISTORY TRACKING
+==============================================================================
+
+LOCATION: Frontend needs to expose exercise_swap_history table
+
+DB Status: ✓ TABLE EXISTS AND IS FULLY FUNCTIONAL
+Location: exercise_swap_history table (created in 20251218 migration)
+
+Columns:
+  id UUID PRIMARY KEY
+  client_id UUID NOT NULL (FK)
+  trainer_id UUID NOT NULL (FK)
+  session_id UUID (FK, optional - swap can happen between sessions)
+  original_exercise_id UUID NOT NULL (FK)
+  replacement_exercise_id UUID NOT NULL (FK)
+  feedback_reason TEXT CHECK (feedback_reason IN ('too_easy', 'just_right', 'challenging', 'struggling'))
+  custom_reason TEXT
+  swapped_at TIMESTAMPTZ DEFAULT NOW()
+
+Indexes: Present on client_id, original_exercise_id, swapped_at
+RLS: ✓ Properly restricted to trainers for their own clients
+
+---
+
+FRONTEND STATUS: ❌ NO ENTITY EXISTS
+
+What needs to be created:
+
+A) ExerciseSwapHistoryEntity
+   Location: lib/features/active_session/domain/entities/exercise_swap_history_entity.dart
+
+   Fields:
+   ```
+   class ExerciseSwapHistoryEntity {
+     final String id;
+     final String clientId;
+     final String trainerId;
+     final String? sessionId;
+     final String originalExerciseId;
+     final String replacementExerciseId;
+     final String? originalExerciseName;  // For display
+     final String? replacementExerciseName;  // For display
+     final ExerciseFeedback? feedbackReason;
+     final String? customReason;
+     final DateTime swappedAt;
+   }
+   ```
+
+B) ExerciseSwapHistoryModel
+   Location: lib/features/active_session/data/models/exercise_swap_history_model.dart
+
+   With proper JSON serialization and joins for exercise names
+
+---
+
+DATASOURCE STATUS: ❌ NO METHODS EXPOSED
+
+Add to SessionRemoteDataSource or new ExerciseHistoryRemoteDataSource:
+
+```dart
+// Log exercise swap
+Future<ExerciseSwapHistoryModel> logExerciseSwap({
+  required String clientId,
+  required String trainerId,
+  required String originalExerciseId,
+  required String replacementExerciseId,
+  String? sessionId,
+  ExerciseFeedback? feedbackReason,
+  String? customReason,
+}) async {
+  final data = await _client.from('exercise_swap_history').insert({
+    'client_id': clientId,
+    'trainer_id': trainerId,
+    'session_id': sessionId,
+    'original_exercise_id': originalExerciseId,
+    'replacement_exercise_id': replacementExerciseId,
+    'feedback_reason': feedbackReason?.id,
+    'custom_reason': customReason,
+  }).select().single();
+
+  return ExerciseSwapHistoryModel.fromJson(data);
+}
+
+// Get swap history for client
+Future<List<ExerciseSwapHistoryModel>> getClientSwapHistory({
+  required String clientId,
+  Duration timeWindow = const Duration(days: 90),
+}) async {
+  final sinceDate = DateTime.now().subtract(timeWindow).toUtc().toIso8601String();
+
+  final data = await _client
+    .from('exercise_swap_history')
+    .select('''
+      id, client_id, trainer_id, session_id,
+      original_exercise_id, replacement_exercise_id,
+      feedback_reason, custom_reason, swapped_at,
+      exercises!original_exercise_id(name_ko, name),
+      exercises!replacement_exercise_id(name_ko, name)
+    ''')
+    .eq('client_id', clientId)
+    .filter('swapped_at', 'gte', sinceDate)
+    .order('swapped_at', ascending: false);
+
+  return (data as List)
+    .map((json) => ExerciseSwapHistoryModel.fromJson(json))
+    .toList();
+}
+
+// Find exercises that are frequently swapped OUT (problematic)
+Future<List<ProblematicExercise>> getProblematicExercises({
+  required String clientId,
+  int minSwapCount = 2,
+}) async {
+  final swaps = await getClientSwapHistory(clientId: clientId);
+
+  // Count how many times each exercise was swapped OUT
+  final problemCounts = <String, int>{};
+  for (final swap in swaps) {
+    problemCounts[swap.originalExerciseId] =
+      (problemCounts[swap.originalExerciseId] ?? 0) + 1;
+  }
+
+  // Filter to problematic ones
+  return problemCounts.entries
+    .where((e) => e.value >= minSwapCount)
+    .map((e) => ProblematicExercise(exerciseId: e.key, swapCount: e.value))
+    .toList();
+}
+
+// Get swap alternatives (e.g., what does client swap Barbell Squat FOR?)
+Future<Map<String, int>> getSwapAlternatives({
+  required String originalExerciseId,
+  required String clientId,
+}) async {
+  final swaps = await getClientSwapHistory(clientId: clientId);
+
+  // Filter swaps for this exercise
+  final relevantSwaps = swaps
+    .where((s) => s.originalExerciseId == originalExerciseId)
+    .toList();
+
+  // Count which exercises are used as replacements
+  final alternatives = <String, int>{};
+  for (final swap in relevantSwaps) {
+    alternatives[swap.replacementExerciseId] =
+      (alternatives[swap.replacementExerciseId] ?? 0) + 1;
+  }
+
+  return alternatives;
+}
+```
+
+---
+
+USE CASE: During active session and in analytics
+
+1. When trainer needs to swap exercise mid-session:
+   - Log the swap with reason (too easy, struggling, etc.)
+   - Can include custom reason if needed
+
+2. Post-session analytics:
+   - Show trainers which exercises are consistently swapped
+   - Suggest not programming those exercises
+   - Recommend substitutions based on client's own history
+
+3. Recommendation engine:
+   - Don't recommend exercises that client frequently swaps out
+   - Suggest alternatives the client actually uses
+
+---
+
+IMPACT: MEDIUM
+
+Swap history helps with:
+1. Identifying poorly-matched exercises for client
+2. Analyzing programming effectiveness
+3. Suggesting better exercise selections
+4. Training the recommendation engine
+5. Understanding client preferences and limitations
+
+---
+
+DATABASE QUERY READY? YES
+
+Test query to verify:
+```sql
+SELECT
+  esh.id,
+  e1.name_ko AS original_exercise,
+  e2.name_ko AS replacement_exercise,
+  esh.feedback_reason,
+  esh.custom_reason,
+  COUNT(*) OVER (PARTITION BY esh.original_exercise_id) AS total_swaps
+FROM exercise_swap_history esh
+JOIN exercises e1 ON e1.id = esh.original_exercise_id
+JOIN exercises e2 ON e2.id = esh.replacement_exercise_id
+WHERE esh.client_id = 'client-uuid'
+ORDER BY esh.swapped_at DESC
+LIMIT 20;
+```
+
+==============================================================================
+GAP 3: SESSION REPORT DELIVERY TRACKING
+==============================================================================
+
+LOCATION: session_reports table has 3 columns frontend doesn't expose
+
+DB Status: ✓ COLUMNS EXIST IN SCHEMA
+Migration: 20251218_100000_mvp_features.sql (lines 86-87)
+
+Columns:
+  pdf_url TEXT
+  email_sent_at TIMESTAMPTZ
+  push_sent_at TIMESTAMPTZ
+
+---
+
+FRONTEND STATUS: ⚠️ PARTIALLY INCOMPLETE
+
+SessionReportEntity currently has:
+  - id, sessionId, clientId, trainerId
+  - type, status, title, content, highlights
+  - trainerComment, generatedAt, sentAt, viewedAt
+  - htmlUrl ✓ (for shareable HTML reports)
+
+MISSING:
+  - pdf_url (where PDF version was stored)
+  - email_sent_at (when email notification sent)
+  - push_sent_at (when push notification sent)
+
+---
+
+WHAT NEEDS TO BE ADDED:
+
+A) Update SessionReportEntity
+
+In lib/features/ai_report/domain/entities/session_report.dart:
+
+```dart
+class SessionReportEntity {
+  final String id;
+  // ... existing fields ...
+  final String? htmlUrl;
+
+  // ADD THESE:
+  final String? pdfUrl;        // For storing generated PDF URL
+  final DateTime? emailSentAt;   // When email notification sent
+  final DateTime? pushSentAt;    // When push notification sent
+
+  const SessionReportEntity({
+    // ... existing params ...
+    this.htmlUrl,
+    this.pdfUrl,        // ADD
+    this.emailSentAt,   // ADD
+    this.pushSentAt,    // ADD
+  });
+
+  SessionReportEntity copyWith({
+    // ... existing params ...
+    String? htmlUrl,
+    String? pdfUrl,      // ADD
+    DateTime? emailSentAt, // ADD
+    DateTime? pushSentAt,  // ADD
+  }) {
+    return SessionReportEntity(
+      // ... existing copies ...
+      htmlUrl: htmlUrl ?? this.htmlUrl,
+      pdfUrl: pdfUrl ?? this.pdfUrl,           // ADD
+      emailSentAt: emailSentAt ?? this.emailSentAt, // ADD
+      pushSentAt: pushSentAt ?? this.pushSentAt,   // ADD
+    );
+  }
+}
+```
+
+B) Update SessionReportModel
+
+In lib/features/ai_report/data/models/session_report_model.dart:
+
+```dart
+factory SessionReportModel.fromJson(Map<String, dynamic> json) {
+  return SessionReportModel(
+    // ... existing fields ...
+    htmlUrl: json['html_url'] as String?,
+    pdfUrl: json['pdf_url'] as String?,        // ADD
+    emailSentAt: json['email_sent_at'] != null
+      ? DateTime.parse(json['email_sent_at'] as String)
+      : null,
+    pushSentAt: json['push_sent_at'] != null
+      ? DateTime.parse(json['push_sent_at'] as String)
+      : null,
+  );
+}
+
+Map<String, dynamic> toJson() {
+  return {
+    // ... existing fields ...
+    'html_url': htmlUrl,
+    'pdf_url': pdfUrl,           // ADD
+    'email_sent_at': emailSentAt?.toIso8601String(),  // ADD
+    'push_sent_at': pushSentAt?.toIso8601String(),    // ADD
+  };
+}
+```
+
+C) Add datasource methods
+
+In SessionReportRemoteDataSource:
+
+```dart
+// Update report with delivery tracking
+Future<SessionReportModel> markEmailSent(String reportId) async {
+  final response = await _client
+    .from('session_reports')
+    .update({
+      'email_sent_at': DateTime.now().toUtc().toIso8601String(),
+      'status': 'sent',
+    })
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  return SessionReportModel.fromJson(response);
+}
+
+Future<SessionReportModel> markPushSent(String reportId) async {
+  final response = await _client
+    .from('session_reports')
+    .update({
+      'push_sent_at': DateTime.now().toUtc().toIso8601String(),
+      'status': 'sent',
+    })
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  return SessionReportModel.fromJson(response);
+}
+
+Future<SessionReportModel> storePdfUrl(String reportId, String pdfUrl) async {
+  final response = await _client
+    .from('session_reports')
+    .update({'pdf_url': pdfUrl})
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  return SessionReportModel.fromJson(response);
+}
+```
+
+---
+
+IMPACT: MEDIUM (nice to have, not blocking)
+
+Benefits:
+1. Track which reports were successfully delivered
+2. Know when notifications were sent
+3. Store archival PDF URLs for long-term access
+4. Build audit trail for compliance
+5. Analytics on report delivery timing
+
+---
+
+SEVERITY: LOW to MEDIUM
+- PDF tracking: Medium (for archival)
+- Email/push tracking: Low (for analytics)
+- Can be added post-MVP
+
+---
+
+DATABASE QUERY READY? YES
+
+Verify fields exist:
+```sql
+SELECT
+  id, status, html_url, pdf_url, email_sent_at, push_sent_at
+FROM session_reports
+WHERE trainer_id = 'trainer-uuid'
+ORDER BY generated_at DESC
+LIMIT 10;
+```
+
+==============================================================================
+IMPLEMENTATION PRIORITY & TIMELINE
+==============================================================================
+
+PHASE 1: HIGH PRIORITY (Must have before next release)
+Timeline: 1-2 sprints (2-4 weeks)
+
+1. SessionExerciseFeedbackEntity + datasource methods
+   Effort: ~4 hours
+   Blocker: No - can be added independently
+   Value: High - needed for recommendation engine
+
+2. ExerciseSwapHistoryEntity + datasource methods
+   Effort: ~4 hours
+   Blocker: No - can be added independently
+   Value: Medium - useful for analytics
+
+PHASE 2: MEDIUM PRIORITY (Nice to have)
+Timeline: Next release (1-2 months)
+
+1. Add pdf_url, email_sent_at, push_sent_at to SessionReportEntity
+   Effort: ~2 hours
+   Blocker: No - backwards compatible change
+   Value: Medium - delivery tracking
+
+2. UI to display feedback patterns
+   Effort: ~8 hours
+   Blocker: No - depends on Phase 1
+   Value: Medium - helps trainers understand programming success
+
+PHASE 3: LOW PRIORITY (Future enhancements)
+Timeline: Optional, can be deferred
+
+1. Analytics dashboard for swap patterns
+   Effort: ~16 hours
+   Blocker: No - depends on Phase 1
+   Value: Low - interesting but not critical
+
+2. Automated suggestions based on swap history
+   Effort: ~12 hours
+   Blocker: No - depends on Phase 1
+   Value: Low - enhancement feature
+
+==============================================================================
+TESTING CHECKLIST
+==============================================================================
+
+For SessionExerciseFeedbackEntity:
+- [ ] Can insert feedback record from active session
+- [ ] Can retrieve feedback history for exercise
+- [ ] Can calculate feedback summary (count of each type)
+- [ ] RLS properly restricts to trainer's own clients
+- [ ] Feedback enum values match DB constraint
+- [ ] Notes field is optional
+
+For ExerciseSwapHistoryEntity:
+- [ ] Can log swap with optional feedback reason
+- [ ] Can log swap with custom reason
+- [ ] Can retrieve swap history with time window filter
+- [ ] Can identify problematic exercises (swapped >N times)
+- [ ] Can get swap alternatives (what does client use instead)
+- [ ] RLS properly restricts to trainer's own clients
+- [ ] Exercise names properly joined from exercises table
+
+For SessionReportEntity enhancements:
+- [ ] pdf_url properly stored and retrieved
+- [ ] email_sent_at set when marking email sent
+- [ ] push_sent_at set when marking push sent
+- [ ] Status updated to 'sent' when delivery logged
+- [ ] Backwards compatible with existing reports (null values OK)
+- [ ] RLS unchanged (still works properly)
+
+==============================================================================
+ROLLOUT STRATEGY
+==============================================================================
+
+Option 1: Big Bang (Recommended)
+- Implement all three gaps in single sprint
+- Total effort: ~12-16 hours
+- Risk: Low (all independent changes)
+- Benefit: Complete feedback/analytics system at once
+
+Option 2: Phased Rollout
+- Release feedback + swap history first (core functionality)
+- Follow up with report tracking in next release
+- Stagger to reduce cognitive load
+- Risk: Medium (split work across releases)
+
+Option 3: Minimal MVP
+- Only implement SessionExerciseFeedbackEntity
+- Defer swap history and report tracking
+- Launch MVP with basic feedback only
+- Risk: Low but limits analytics capabilities
+
+==============================================================================
+BACKWARDS COMPATIBILITY NOTES
+==============================================================================
+
+All additions are additive - no existing schemas or entities need to change:
+- SessionExerciseFeedbackEntity is new (no impact)
+- ExerciseSwapHistoryEntity is new (no impact)
+- SessionReportEntity additions are optional fields (nullability safe)
+
+Migration strategy:
+- No DB schema changes needed (all tables already exist)
+- Frontend changes are purely additive
+- Can be rolled out without DB migration
+- No data loss or backwards compatibility issues
+
+==============================================================================
+SUMMARY
+==============================================================================
+
+Database Status: ✓ COMPLETE - All tables exist with proper schema
+Frontend Status: ⚠️ INCOMPLETE - 3 entities missing or incomplete
+
+Required Frontend Work:
+1. Add SessionExerciseFeedbackEntity (2-3 hours)
+2. Add ExerciseSwapHistoryEntity (2-3 hours)
+3. Extend SessionReportEntity (1-2 hours)
+4. Add datasource query methods (4-6 hours)
+
+Total Effort: 12-16 hours
+Blocking Issues: None
+Risk Level: Low
+Value/Impact: High (enables feedback and analytics)
+
+Ready to implement immediately - no backend changes needed.

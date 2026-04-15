@@ -565,7 +565,7 @@ class SessionGenerationService {
     if (isCompoundSlot && exercise.category == ExerciseCategory.compound) {
       parts.add('복합 운동으로 여러 근육을 동시에 자극합니다.');
     } else if (!isCompoundSlot) {
-      parts.add('마무리 운동으로 특정 근육을 집중적으로 자극합니다.');
+      parts.add('보조 운동으로 특정 근육을 집중적으로 자극합니다.');
     }
 
     if (exercise.muscleGroup != null) {

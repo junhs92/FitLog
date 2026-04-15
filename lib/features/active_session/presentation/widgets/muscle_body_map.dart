@@ -120,7 +120,7 @@ class MuscleBodyMap extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
       ),
       child: Column(
@@ -131,7 +131,7 @@ class MuscleBodyMap extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),

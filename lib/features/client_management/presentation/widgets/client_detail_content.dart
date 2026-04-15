@@ -49,7 +49,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Client updated successfully'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppColors.success,
           ),
         );
         setState(() => _isEditing = false);
@@ -113,7 +113,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
             child: FloatingActionButton.extended(
               heroTag: 'schedule_fab_${widget.client.id}',
               onPressed: () => _showScheduleSheet(context),
-              backgroundColor: AppColors.neutral100,
+              backgroundColor: AppColors.darkSurfaceCard,
               foregroundColor: AppColors.primary,
               elevation: 2,
               icon: const Icon(Icons.add),
@@ -194,7 +194,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
                   Text(
                     '${widget.client.age} years old',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.neutral700,
+                          color: AppColors.darkTextSecondary,
                         ),
                   ),
                 // Remaining Sessions Display
@@ -253,7 +253,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
                 loading: () => Container(
                   height: 120,
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceElevated,
+                    color: AppColors.darkSurfaceElevated,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   ),
                   child: const Center(
@@ -440,7 +440,8 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: AppColors.neutral700,
+                  color: AppColors.darkTextPrimary,
+                  fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -455,7 +456,7 @@ class _ClientDetailContentState extends ConsumerState<ClientDetailContent> {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: AppColors.neutral700),
+          Icon(icon, size: 20, color: AppColors.primary),
           const SizedBox(width: AppSpacing.sm),
           Text(text),
         ],

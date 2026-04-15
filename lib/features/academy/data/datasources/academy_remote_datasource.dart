@@ -31,6 +31,10 @@ class AcademyRemoteDataSourceImpl implements AcademyRemoteDataSource {
       query = query.eq('category', category);
     }
 
+    final oneMonthAgo =
+        DateTime.now().subtract(const Duration(days: 30)).toUtc().toIso8601String();
+    query = query.gte('published_at', oneMonthAgo);
+
     final response = await query
         .order('published_at', ascending: false)
         .range(offset, offset + limit - 1);

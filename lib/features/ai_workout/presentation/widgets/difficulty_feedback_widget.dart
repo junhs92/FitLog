@@ -4,6 +4,9 @@ import '../../../../core/theme/colors.dart';
 import '../../../../core/theme/spacing.dart';
 import '../../domain/entities/session_feedback.dart';
 import '../../domain/entities/alternative_exercise.dart';
+import '../../../active_session/domain/entities/exercise_set_entity.dart';
+import '../../../active_session/presentation/providers/exercise_picker_provider.dart';
+import '../../../active_session/presentation/providers/session_provider.dart';
 import '../providers/ai_workout_provider.dart';
 
 /// Widget for real-time difficulty feedback during sessions
@@ -26,6 +29,7 @@ class DifficultyFeedbackWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return AlternativeExerciseButton(
       exerciseId: exerciseId,
+      clientId: clientId,
       onAlternativeSelected: onAlternativeSelected,
     );
   }
@@ -34,10 +38,12 @@ class DifficultyFeedbackWidget extends ConsumerWidget {
 /// Button to open alternative exercise bottom sheet
 class AlternativeExerciseButton extends ConsumerWidget {
   final String exerciseId;
+  final String? clientId;
   final Function(SessionAlternative)? onAlternativeSelected;
 
   const AlternativeExerciseButton({
     required this.exerciseId,
+    this.clientId,
     this.onAlternativeSelected,
     super.key,
   });
@@ -94,6 +100,7 @@ class AlternativeExerciseButton extends ConsumerWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) => AlternativeExerciseBottomSheet(
         exerciseId: exerciseId,
+        clientId: clientId,
         onAlternativeSelected: (alt) {
           Navigator.pop(ctx);
           onAlternativeSelected?.call(alt);
@@ -104,19 +111,56 @@ class AlternativeExerciseButton extends ConsumerWidget {
 }
 
 /// Bottom sheet showing alternative exercises grouped by type
-class AlternativeExerciseBottomSheet extends ConsumerWidget {
+class AlternativeExerciseBottomSheet extends ConsumerStatefulWidget {
   final String exerciseId;
+  final String? clientId;
   final Function(SessionAlternative)? onAlternativeSelected;
 
   const AlternativeExerciseBottomSheet({
     required this.exerciseId,
+    this.clientId,
     this.onAlternativeSelected,
     super.key,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final alternativesAsync = ref.watch(alternativeExercisesProvider(exerciseId));
+  ConsumerState<AlternativeExerciseBottomSheet> createState() =>
+      _AlternativeExerciseBottomSheetState();
+}
+
+class _AlternativeExerciseBottomSheetState
+    extends ConsumerState<AlternativeExerciseBottomSheet> {
+  String? _expandedExerciseId;
+
+  void _toggleExpanded(String exerciseId) {
+    setState(() {
+      if (_expandedExerciseId == exerciseId) {
+        _expandedExerciseId = null;
+      } else {
+        _expandedExerciseId = exerciseId;
+      }
+    });
+  }
+
+  List<SessionAlternative> _sortByHistory(
+      List<SessionAlternative> alts, Set<String> recentIds) {
+    if (recentIds.isEmpty) return alts;
+    final sorted = List<SessionAlternative>.from(alts);
+    sorted.sort((a, b) {
+      final aDone = recentIds.contains(a.exerciseId) ? 0 : 1;
+      final bDone = recentIds.contains(b.exerciseId) ? 0 : 1;
+      return aDone.compareTo(bDone);
+    });
+    return sorted;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final alternativesAsync = ref.watch(alternativeExercisesProvider(widget.exerciseId));
+    final recentIds = widget.clientId != null
+        ? (ref.watch(recentExercisesProvider(widget.clientId!)).valueOrNull
+            ?.map((e) => e.id).toSet() ?? <String>{})
+        : <String>{};
 
     return Container(
       constraints: BoxConstraints(
@@ -250,10 +294,13 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
                           subtitle: '동일 장비로 다른 변형',
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        ...result.patternAlternatives.map((alt) =>
+                        ..._sortByHistory(result.patternAlternatives, recentIds).map((alt) =>
                             _AlternativeExerciseItem(
                               alternative: alt,
-                              onSelect: () => onAlternativeSelected?.call(alt),
+                              clientId: widget.clientId,
+                              isExpanded: _expandedExerciseId == alt.exerciseId,
+                              onToggle: () => _toggleExpanded(alt.exerciseId),
+                              onSelect: () => widget.onAlternativeSelected?.call(alt),
                             )),
                         const SizedBox(height: AppSpacing.lg),
                       ],
@@ -266,7 +313,7 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         ...result.equipmentAlternatives.map((group) =>
-                            _buildEquipmentGroup(group)),
+                            _buildEquipmentGroup(group, recentIds)),
                         const SizedBox(height: AppSpacing.lg),
                       ],
                       // Section 3: Accessory exercises (악세서리 운동) - NEW
@@ -277,10 +324,13 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
                           subtitle: '같은 패턴 고립 운동',
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        ...result.accessoryExercises.map((alt) =>
+                        ..._sortByHistory(result.accessoryExercises, recentIds).map((alt) =>
                             _AlternativeExerciseItem(
                               alternative: alt,
-                              onSelect: () => onAlternativeSelected?.call(alt),
+                              clientId: widget.clientId,
+                              isExpanded: _expandedExerciseId == alt.exerciseId,
+                              onToggle: () => _toggleExpanded(alt.exerciseId),
+                              onSelect: () => widget.onAlternativeSelected?.call(alt),
                             )),
                       ],
                       const SizedBox(height: AppSpacing.md),
@@ -330,7 +380,7 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
     );
   }
 
-  Widget _buildEquipmentGroup(EquipmentGroup group) {
+  Widget _buildEquipmentGroup(EquipmentGroup group, Set<String> recentIds) {
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
@@ -385,9 +435,12 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
             ),
           ),
           // Exercises in this equipment group
-          ...group.exercises.map((alt) => _AlternativeExerciseItem(
+          ..._sortByHistory(group.exercises, recentIds).map((alt) => _AlternativeExerciseItem(
                 alternative: alt,
-                onSelect: () => onAlternativeSelected?.call(alt),
+                clientId: widget.clientId,
+                isExpanded: _expandedExerciseId == alt.exerciseId,
+                onToggle: () => _toggleExpanded(alt.exerciseId),
+                onSelect: () => widget.onAlternativeSelected?.call(alt),
                 showEquipmentBadge: false,
               )),
         ],
@@ -396,14 +449,20 @@ class AlternativeExerciseBottomSheet extends ConsumerWidget {
   }
 }
 
-/// Individual alternative exercise item
+/// Individual alternative exercise item with expandable history
 class _AlternativeExerciseItem extends StatelessWidget {
   final SessionAlternative alternative;
+  final String? clientId;
+  final bool isExpanded;
+  final VoidCallback? onToggle;
   final VoidCallback onSelect;
   final bool showEquipmentBadge;
 
   const _AlternativeExerciseItem({
     required this.alternative,
+    this.clientId,
+    this.isExpanded = false,
+    this.onToggle,
     required this.onSelect,
     this.showEquipmentBadge = true,
   });
@@ -413,7 +472,7 @@ class _AlternativeExerciseItem extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onSelect,
+        onTap: clientId != null ? onToggle : onSelect,
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
@@ -424,68 +483,316 @@ class _AlternativeExerciseItem extends StatelessWidget {
               ),
             ),
           ),
-          child: Row(
+          child: Column(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            alternative.displayName,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.neutralBlack,
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                alternative.displayName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.neutralBlack,
+                                ),
+                              ),
+                            ),
+                            if (alternative.isRecommended)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  '추천',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.neutralWhite,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          alternative.displayReason,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.neutral500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle, color: AppColors.primary, size: 24),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: onSelect,
+                  ),
+                ],
+              ),
+              // Inline history
+              if (clientId != null)
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 200),
+                  crossFadeState: isExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Consumer(builder: (context, ref, _) {
+                      final historyAsync = ref.watch(
+                        exercisePickerHistoryProvider((
+                          clientId: clientId!,
+                          exerciseId: alternative.exerciseId,
+                        )),
+                      );
+                      return historyAsync.when(
+                        loading: () => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           ),
                         ),
-                        if (alternative.isRecommended)
-                          Container(
-                            margin: const EdgeInsets.only(left: 8),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              '추천',
+                        error: (_, __) => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text('기록을 불러올 수 없습니다',
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.neutralWhite,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      alternative.displayReason,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.neutral500,
-                      ),
-                    ),
-                  ],
+                                  fontSize: 12, color: AppColors.neutral500)),
+                        ),
+                        data: (data) => _AlternativeHistoryContent(data: data),
+                      );
+                    }),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.neutral400,
-                size: 20,
-              ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// Compact history display for alternative exercise items
+class _AlternativeHistoryContent extends StatelessWidget {
+  final ExercisePickerHistoryData data;
+
+  const _AlternativeHistoryContent({required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!data.hasData) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.history, size: 15, color: AppColors.neutral400),
+            const SizedBox(width: 6),
+            const Text(
+              '이 운동의 기록이 없습니다',
+              style: TextStyle(fontSize: 12, color: AppColors.neutral500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (data.pr != null) _buildPrBanner(data.pr!),
+        if (data.recentSessions.isNotEmpty) ...[
+          if (data.pr != null) const SizedBox(height: 8),
+          for (int i = 0; i < data.recentSessions.length; i++)
+            _buildSessionBlock(data.recentSessions[i], i),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPrBanner(ExerciseSetEntity pr) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [
+          AppColors.warning.withValues(alpha: 0.15),
+          AppColors.warning.withValues(alpha: 0.04),
+        ]),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(7),
+            ),
+            child: const Icon(Icons.emoji_events,
+                size: 15, color: AppColors.warning),
+          ),
+          const SizedBox(width: 8),
+          const Text('PR',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.warning)),
+          const Spacer(),
+          _buildWeightReps(pr, large: true),
+        ],
+      ),
+    );
+  }
+
+  static const _sessionAccentOpacities = [1.0, 0.55, 0.3];
+
+  Widget _buildSessionBlock(SessionSetsGroup session, int index) {
+    final accent = _sessionAccentOpacities[index.clamp(0, 2)];
+    final now = DateTime.now();
+    final diff = now.difference(session.date).inDays;
+    final dateStr = diff == 0
+        ? '오늘'
+        : diff == 1
+            ? '어제'
+            : diff < 7
+                ? '$diff일 전'
+                : '${session.date.month}/${session.date.day}';
+
+    return Padding(
+      padding: EdgeInsets.only(top: index > 0 ? 2 : 0),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: accent),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(dateStr,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary.withValues(alpha: accent),
+                          letterSpacing: 0.2,
+                        )),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 4,
+                      children:
+                          session.sets.take(6).map(_buildSetChip).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSetChip(ExerciseSetEntity set) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.neutral100,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: _buildWeightReps(set, large: false),
+    );
+  }
+
+  Widget _buildWeightReps(ExerciseSetEntity set, {required bool large}) {
+    final weight =
+        set.weight?.toStringAsFixed(set.weight! % 1 == 0 ? 0 : 1);
+    final reps = set.reps;
+
+    if (weight != null && reps != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(weight,
+              style: TextStyle(
+                  fontSize: large ? 16 : 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.neutralBlack)),
+          Text('kg',
+              style: TextStyle(
+                  fontSize: large ? 11 : 9,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.neutral600)),
+          Text(large ? ' x $reps회' : ' x$reps',
+              style: TextStyle(
+                  fontSize: large ? 14 : 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.neutral700)),
+        ],
+      );
+    }
+    if (weight != null) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(weight,
+              style: TextStyle(
+                  fontSize: large ? 16 : 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.neutralBlack)),
+          Text('kg',
+              style: TextStyle(
+                  fontSize: large ? 11 : 9,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.neutral600)),
+        ],
+      );
+    }
+    if (reps != null) {
+      return Text('$reps회',
+          style: TextStyle(
+              fontSize: large ? 16 : 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.neutralBlack));
+    }
+    return Text('-',
+        style: TextStyle(
+            fontSize: large ? 16 : 12, color: AppColors.neutral500));
   }
 }
 

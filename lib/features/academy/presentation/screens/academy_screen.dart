@@ -10,12 +10,25 @@ import '../providers/academy_provider.dart';
 import '../widgets/category_chip_bar.dart';
 import '../widgets/video_card.dart';
 
-class AcademyScreen extends ConsumerWidget {
+class AcademyScreen extends ConsumerStatefulWidget {
   const AcademyScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AcademyScreen> createState() => _AcademyScreenState();
+}
+
+class _AcademyScreenState extends ConsumerState<AcademyScreen> {
+  static const int _maxPerChannel = 5;
+  final Set<String> _expandedChannels = {};
+
+  @override
+  Widget build(BuildContext context) {
     final videosState = ref.watch(academyVideosProvider);
+
+    // Reset expanded state when category changes
+    ref.listen(academyCategoryProvider, (_, __) {
+      _expandedChannels.clear();
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -25,7 +38,6 @@ class AcademyScreen extends ConsumerWidget {
       body: Column(
         children: [
           const CategoryChipBar(),
-          // Sync indicator
           if (videosState.isSyncing)
             Container(
               width: double.infinity,
@@ -57,15 +69,14 @@ class AcademyScreen extends ConsumerWidget {
             ),
           const SizedBox(height: AppSpacing.sm),
           Expanded(
-            child: _buildContent(context, ref, videosState),
+            child: _buildContent(videosState),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildContent(
-      BuildContext context, WidgetRef ref, AcademyVideosState state) {
+  Widget _buildContent(AcademyVideosState state) {
     if (state.isLoading) {
       return const LoadingIndicator();
     }
@@ -92,8 +103,8 @@ class AcademyScreen extends ConsumerWidget {
 
     // Sort channels by latest video date (most recent first)
     final sortedEntries = channelGroups.entries.toList()
-      ..sort(
-          (a, b) => b.value.first.publishedAt.compareTo(a.value.first.publishedAt));
+      ..sort((a, b) =>
+          b.value.first.publishedAt.compareTo(a.value.first.publishedAt));
 
     return RefreshIndicator(
       onRefresh: () => ref.read(academyVideosProvider.notifier).refresh(),
@@ -102,26 +113,48 @@ class AcademyScreen extends ConsumerWidget {
         itemCount: sortedEntries.length,
         itemBuilder: (context, index) {
           final entry = sortedEntries[index];
-          final videos = entry.value;
-          final channelName =
-              videos.first.channelNameKo.isNotEmpty
-                  ? videos.first.channelNameKo
-                  : videos.first.channelId;
+          final allVideos = entry.value;
+          final channelId = entry.key;
+          final channelName = allVideos.first.channelNameKo.isNotEmpty
+              ? allVideos.first.channelNameKo
+              : channelId;
+
+          final isExpanded = _expandedChannels.contains(channelId);
+          final hasMore = allVideos.length > _maxPerChannel;
+          final displayVideos = isExpanded
+              ? allVideos
+              : allVideos.take(_maxPerChannel).toList();
+          final remainingCount = allVideos.length - _maxPerChannel;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Channel header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
+              Container(
+                margin: const EdgeInsets.fromLTRB(
                     AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.07),
+                  borderRadius:
+                      BorderRadius.circular(AppSpacing.radiusMd),
+                  border: const Border(
+                    left: BorderSide(
+                      color: AppColors.primary,
+                      width: 3,
+                    ),
+                  ),
+                ),
                 child: Row(
                   children: [
                     Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
                         shape: BoxShape.circle,
                       ),
                       child: Center(
@@ -129,43 +162,101 @@ class AcademyScreen extends ConsumerWidget {
                           channelName.isNotEmpty
                               ? channelName.characters.first
                               : '?',
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.neutralWhite,
+                              ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.sm),
+                    const SizedBox(width: AppSpacing.md),
                     Expanded(
                       child: Text(
                         channelName,
                         style:
-                            Theme.of(context).textTheme.titleSmall?.copyWith(
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    Text(
-                      '${videos.length}개',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.neutral500,
-                          ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusFull),
+                      ),
+                      child: Text(
+                        '영상 ${allVideos.length}개',
+                        style:
+                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: AppColors.primaryDark,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                      ),
                     ),
                   ],
                 ),
               ),
-              // Videos for this channel
-              ...videos.map((v) => VideoCard(video: v)),
+              // Videos (capped at 5 unless expanded)
+              ...displayVideos.map((v) => VideoCard(video: v)),
+              // Load more / collapse button
+              if (hasMore)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () {
+                        setState(() {
+                          if (isExpanded) {
+                            _expandedChannels.remove(channelId);
+                          } else {
+                            _expandedChannels.add(channelId);
+                          }
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.neutral700,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.sm,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            isExpanded
+                                ? '접기'
+                                : '더보기 ($remainingCount개)',
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Icon(
+                            isExpanded
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               if (index < sortedEntries.length - 1)
-                const Divider(
-                  height: AppSpacing.lg,
-                  thickness: 1,
-                  indent: AppSpacing.lg,
-                  endIndent: AppSpacing.lg,
-                  color: AppColors.neutral200,
+                Container(
+                  height: AppSpacing.sm,
+                  margin: const EdgeInsets.only(top: AppSpacing.sm),
+                  color: AppColors.neutral100,
                 ),
             ],
           );

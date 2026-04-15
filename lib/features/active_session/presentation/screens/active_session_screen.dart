@@ -47,10 +47,12 @@ class ActiveSessionScreen extends ConsumerStatefulWidget {
 
 class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _memoController = TextEditingController();
 
   @override
   void dispose() {
     _scrollController.dispose();
+    _memoController.dispose();
     super.dispose();
   }
 
@@ -60,6 +62,15 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     // Start or load session
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeSession();
+      // Sync memo controller when exercise changes
+      ref.listenManual(
+        activeSessionProvider.select((s) => s.currentMemo),
+        (prev, next) {
+          if (_memoController.text != next) {
+            _memoController.text = next;
+          }
+        },
+      );
     });
   }
 
@@ -139,7 +150,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
       final timerState = ref.read(restTimerProvider);
       final restSeconds = timerState.totalSeconds > 0
           ? timerState.totalSeconds
-          : (state.currentExercise?.restSeconds ?? 90);
+          : (state.currentExercise?.restSeconds ?? state.goalRestSeconds);
       ref.read(restTimerProvider.notifier).startTimer(seconds: restSeconds);
     } else if (mounted) {
       debugPrint('🔴 _logSet: Failed or not mounted. success=$success, mounted=$mounted');
@@ -423,7 +434,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -553,7 +564,7 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.neutralBlack,
+                          color: AppColors.darkTextPrimary,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -624,6 +635,31 @@ class _ActiveSessionScreenState extends ConsumerState<ActiveSessionScreen> {
                             movementGroup:
                                 currentExercise.exercise.movementGroup,
                             compact: true,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          // Free-form memo
+                          TextField(
+                            controller: _memoController,
+                            decoration: InputDecoration(
+                              hintText: '메모 입력...',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: AppColors.darkBorder),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: AppColors.darkBorder),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: AppColors.primary),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              isDense: true,
+                            ),
+                            maxLines: 2,
+                            style: const TextStyle(fontSize: 13),
+                            onChanged: (value) => ref.read(activeSessionProvider.notifier).setMemo(value),
                           ),
                         ],
                       ),
@@ -789,9 +825,9 @@ class _ExerciseTabs extends StatelessWidget {
     return Container(
       height: 56,
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         border: Border(
-          bottom: BorderSide(color: AppColors.neutral300),
+          bottom: BorderSide(color: AppColors.darkBorder),
         ),
       ),
       child: ListView.builder(
@@ -814,7 +850,7 @@ class _ExerciseTabs extends StatelessWidget {
                   ? AppColors.primary
                   : isCompleted
                       ? AppColors.success.withValues(alpha: 0.1)
-                      : AppColors.neutral100,
+                      : AppColors.darkSurfaceCard,
               borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               child: InkWell(
                 onTap: () => onTap(index),
@@ -843,7 +879,7 @@ class _ExerciseTabs extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: isSelected
                               ? AppColors.neutralWhite
-                              : AppColors.neutralBlack,
+                              : AppColors.darkTextPrimary,
                         ),
                       ),
                       // Comment indicator
@@ -940,7 +976,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: const BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -951,7 +987,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppColors.neutral300,
+              color: AppColors.darkBorder,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -1132,12 +1168,12 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
           _buildContextualFamilySection(contextualRecs, exerciseIdsInSession),
         ],
 
-        // All families sorted by score
-        if (otherFamilies.isNotEmpty) ...[
+        // Compound families (주요 운동)
+        if (otherFamilies.any((f) => f.isCompound)) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
             child: Text(
-              '전체 운동',
+              '주요 운동',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -1145,7 +1181,35 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
               ),
             ),
           ),
-          ...otherFamilies.map((family) => _buildFamilyCard(family, exerciseIdsInSession)),
+          ...otherFamilies.where((f) => f.isCompound).map(
+            (family) => _buildFamilyCard(family, exerciseIdsInSession),
+          ),
+        ],
+
+        // Accessory families (보조 운동) with neglect detection
+        if (otherFamilies.any((f) => f.isAccessory)) ...[
+          _buildAccessorySectionHeader(),
+          ...otherFamilies.where((f) => f.isAccessory).map(
+            (family) => _buildFamilyCardWithNeglect(family, exerciseIdsInSession),
+          ),
+        ],
+
+        // Mobility families (모빌리티)
+        if (otherFamilies.any((f) => f.isMobility)) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+            child: Text(
+              '모빌리티',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.neutral600,
+              ),
+            ),
+          ),
+          ...otherFamilies.where((f) => f.isMobility).map(
+            (family) => _buildFamilyCard(family, exerciseIdsInSession),
+          ),
         ],
 
         // Custom exercises section
@@ -1236,7 +1300,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text('마무리 운동', style: TextStyle(fontSize: 11, color: AppColors.success.withValues(alpha: 0.8), fontWeight: FontWeight.w500)),
+              Text('보조 운동', style: TextStyle(fontSize: 11, color: AppColors.success.withValues(alpha: 0.8), fontWeight: FontWeight.w500)),
             ],
           ),
         ),
@@ -1310,15 +1374,64 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
     );
   }
 
-  Widget _buildFamilyCard(ScoredFamily family, Set<String> exerciseIdsInSession) {
+  /// Accessory section header with optional neglect badge
+  Widget _buildAccessorySectionHeader() {
+    final neglectedGroups = ref.watch(neglectedAccessoriesProvider(widget.clientId));
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
+      child: Row(
+        children: [
+          Text(
+            '보조 운동',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.neutral600,
+            ),
+          ),
+          if (neglectedGroups.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '소홀한 부위!',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.warning,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Family card with neglect indicator for accessory exercises
+  Widget _buildFamilyCardWithNeglect(ScoredFamily family, Set<String> exerciseIdsInSession) {
+    final neglectedGroups = ref.watch(neglectedAccessoriesProvider(widget.clientId));
+    final isNeglected = family.muscleGroup != null &&
+        neglectedGroups.contains(family.muscleGroup);
+    return _buildFamilyCard(family, exerciseIdsInSession, isNeglected: isNeglected);
+  }
+
+  Widget _buildFamilyCard(ScoredFamily family, Set<String> exerciseIdsInSession, {bool isNeglected = false}) {
     final isRecommended = family.score > 50;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 3),
       child: Material(
-        color: isRecommended
-            ? AppColors.success.withValues(alpha: 0.04)
-            : AppColors.surfaceLight,
+        color: isNeglected
+            ? AppColors.warning.withValues(alpha: 0.06)
+            : isRecommended
+                ? AppColors.success.withValues(alpha: 0.04)
+                : AppColors.darkBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -1365,9 +1478,24 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        family.displayNameKo,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      Row(
+                        children: [
+                          Text(
+                            family.displayNameKo,
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          if (isNeglected) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: AppColors.warning,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Row(
@@ -1376,7 +1504,20 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                             family.muscleGroup ?? MovementGroup.getDisplayNameKo(family.movementGroup),
                             style: const TextStyle(fontSize: 12, color: AppColors.neutral600),
                           ),
-                          if (family.reason.isNotEmpty) ...[
+                          if (isNeglected) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.warning.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '소홀',
+                                style: TextStyle(fontSize: 10, color: AppColors.warning, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ] else if (family.reason.isNotEmpty) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -1399,7 +1540,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.neutral100,
+                    color: AppColors.darkSurfaceCard,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -1516,7 +1657,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                       label: const Text('전체'),
                       selected: selectedValue == null,
                       onSelected: (_) => onSelected(null),
-                      backgroundColor: AppColors.neutral100,
+                      backgroundColor: AppColors.darkSurfaceCard,
                       selectedColor: AppColors.primary.withValues(alpha: 0.2),
                       labelStyle: TextStyle(
                         fontSize: 11,
@@ -1542,7 +1683,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
                           label: Text(getDisplayName(value)),
                           selected: isSelected,
                           onSelected: isValid ? (_) => onSelected(isSelected ? null : value) : null,
-                          backgroundColor: AppColors.neutral100,
+                          backgroundColor: AppColors.darkSurfaceCard,
                           selectedColor: AppColors.primary.withValues(alpha: 0.2),
                           labelStyle: TextStyle(
                             fontSize: 11,
@@ -1592,7 +1733,7 @@ class _ExercisePickerSheetState extends ConsumerState<_ExercisePickerSheet> {
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Material(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkBackground,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         elevation: 1,
         child: InkWell(
@@ -1863,7 +2004,7 @@ class _PickerHistoryContent extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.neutral100,
+        color: AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.circular(6),
       ),
       child: _buildWeightReps(set, large: false),
@@ -1883,7 +2024,7 @@ class _PickerHistoryContent extends StatelessWidget {
           Text(weight, style: TextStyle(
             fontSize: large ? 16 : 12,
             fontWeight: FontWeight.w700,
-            color: AppColors.neutralBlack,
+            color: AppColors.darkTextPrimary,
           )),
           Text('kg', style: TextStyle(
             fontSize: large ? 11 : 9,
@@ -1904,13 +2045,13 @@ class _PickerHistoryContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.baseline,
         textBaseline: TextBaseline.alphabetic,
         children: [
-          Text(weight, style: TextStyle(fontSize: large ? 16 : 12, fontWeight: FontWeight.w700, color: AppColors.neutralBlack)),
+          Text(weight, style: TextStyle(fontSize: large ? 16 : 12, fontWeight: FontWeight.w700, color: AppColors.darkTextPrimary)),
           Text('kg', style: TextStyle(fontSize: large ? 11 : 9, fontWeight: FontWeight.w500, color: AppColors.neutral600)),
         ],
       );
     }
     if (reps != null) {
-      return Text('$reps회', style: TextStyle(fontSize: large ? 16 : 12, fontWeight: FontWeight.w700, color: AppColors.neutralBlack));
+      return Text('$reps회', style: TextStyle(fontSize: large ? 16 : 12, fontWeight: FontWeight.w700, color: AppColors.darkTextPrimary));
     }
     return Text('-', style: TextStyle(fontSize: large ? 16 : 12, color: AppColors.neutral500));
   }
@@ -1941,18 +2082,24 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return AlternativeExerciseButton(
       exerciseId: exerciseId,
+      clientId: clientId,
       onAlternativeSelected: (alt) => _swapExercise(context, ref, alt),
     );
   }
 
   void _swapExercise(
       BuildContext context, WidgetRef ref, SessionAlternative alt) {
-    // Show confirmation dialog
+    final sessionState = ref.read(activeSessionProvider);
+    final hasSets = sessionState.currentExercise?.sets.isNotEmpty ?? false;
+
+    // Show confirmation dialog with context-aware message
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('대체 운동으로 변경'),
-        content: Text('${alt.displayName}(으)로 변경하시겠습니까?'),
+        title: Text(hasSets ? '대체 운동 추가' : '대체 운동으로 변경'),
+        content: Text(hasSets
+            ? '${alt.displayName}(을)를 다음 운동으로 추가하시겠습니까?'
+            : '${alt.displayName}(으)로 변경하시겠습니까?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -1962,7 +2109,7 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
             onPressed: () async {
               Navigator.pop(ctx);
 
-              // Perform the swap
+              // Perform the swap (keeps original if sets exist)
               final success = await ref
                   .read(activeSessionProvider.notifier)
                   .swapExercise(newExerciseId: alt.exerciseId);
@@ -1971,7 +2118,9 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
                 if (success) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${alt.displayName}(으)로 변경되었습니다'),
+                      content: Text(hasSets
+                          ? '${alt.displayName}(이)가 추가되었습니다'
+                          : '${alt.displayName}(으)로 변경되었습니다'),
                       backgroundColor: AppColors.success,
                     ),
                   );
@@ -1985,7 +2134,7 @@ class _DifficultyFeedbackSection extends ConsumerWidget {
                 }
               }
             },
-            child: const Text('변경'),
+            child: Text(hasSets ? '추가' : '변경'),
           ),
         ],
       ),
@@ -2003,7 +2152,7 @@ class _RestTimerOverlay extends ConsumerWidget {
 
     return Container(
       decoration: const BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
@@ -2017,7 +2166,7 @@ class _RestTimerOverlay extends ConsumerWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.neutral300,
+                  color: AppColors.darkBorder,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -2038,7 +2187,7 @@ class _RestTimerOverlay extends ConsumerWidget {
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                      color: AppColors.darkTextPrimary,
                     ),
                   ),
                 ],
@@ -2152,7 +2301,7 @@ class _SessionSetsHistory extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Container(
           decoration: BoxDecoration(
-            color: AppColors.surfaceElevated,
+            color: AppColors.darkSurfaceElevated,
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
           ),
           child: Column(
@@ -2164,7 +2313,7 @@ class _SessionSetsHistory extends StatelessWidget {
                   vertical: AppSpacing.sm,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.neutral100,
+                  color: AppColors.darkSurfaceCard,
                   borderRadius: BorderRadius.vertical(
                     top: Radius.circular(AppSpacing.radiusMd),
                   ),
@@ -2248,7 +2397,7 @@ class _SessionSetsHistory extends StatelessWidget {
                         ? null
                         : Border(
                             bottom: BorderSide(
-                              color: AppColors.neutral200,
+                              color: AppColors.darkBorder,
                               width: 0.5,
                             ),
                           ),
@@ -2266,7 +2415,7 @@ class _SessionSetsHistory extends StatelessWidget {
                                 ? AppColors.info.withOpacity(0.1)
                                 : item.set.isPR
                                     ? AppColors.warning.withOpacity(0.2)
-                                    : AppColors.neutral100,
+                                    : AppColors.darkSurfaceCard,
                             shape: BoxShape.circle,
                           ),
                           alignment: Alignment.center,
@@ -2295,7 +2444,7 @@ class _SessionSetsHistory extends StatelessWidget {
                                 style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w500,
-                                  color: AppColors.neutralBlack,
+                                  color: AppColors.darkTextPrimary,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2334,7 +2483,7 @@ class _SessionSetsHistory extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.neutralBlack,
+                            color: AppColors.darkTextPrimary,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -2347,7 +2496,7 @@ class _SessionSetsHistory extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.neutralBlack,
+                            color: AppColors.darkTextPrimary,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -2479,7 +2628,7 @@ class _InlineRestTimer extends ConsumerWidget {
                 CircularProgressIndicator(
                   value: timerState.progress,
                   strokeWidth: 3,
-                  backgroundColor: AppColors.neutral200,
+                  backgroundColor: AppColors.darkBorder,
                   valueColor: AlwaysStoppedAnimation(
                     isComplete
                         ? AppColors.success
@@ -2546,7 +2695,7 @@ class _InlineRestTimer extends ConsumerWidget {
               icon: const Icon(Icons.skip_next),
               tooltip: '건너뛰기',
               style: IconButton.styleFrom(
-                backgroundColor: AppColors.neutral200,
+                backgroundColor: AppColors.darkBorder,
                 minimumSize: const Size(36, 36),
               ),
             ),
@@ -2581,9 +2730,9 @@ class _GoalSetsIndicator extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Row(
         children: [
@@ -2619,9 +2768,9 @@ class _RestDurationSelector extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2663,7 +2812,7 @@ class _RestDurationSelector extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? AppColors.primary
-                        : AppColors.neutral100,
+                        : AppColors.darkSurfaceCard,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
@@ -2739,7 +2888,7 @@ class _RepsTimerToggle extends StatelessWidget {
         vertical: AppSpacing.xs,
       ),
       decoration: BoxDecoration(
-        color: AppColors.neutral100,
+        color: AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Row(

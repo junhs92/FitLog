@@ -48,8 +48,8 @@ class MuscleActivityEntity {
     );
   }
 
-  /// Whether this muscle needs attention (5+ days since worked)
-  bool get needsAttention => daysSinceWorked != null && daysSinceWorked! >= 5;
+  /// Whether this muscle needs attention (not worked in the time period)
+  bool get needsAttention => sessionCount == 0;
 
   /// Whether this muscle was worked recently (within 2 days)
   bool get isRecent => daysSinceWorked != null && daysSinceWorked! <= 2;

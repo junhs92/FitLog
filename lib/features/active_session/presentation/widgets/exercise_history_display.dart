@@ -21,9 +21,9 @@ class ExerciseHistoryDisplay extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.neutral200),
+        border: Border.all(color: AppColors.darkBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,7 +117,7 @@ class _PRSection extends StatelessWidget {
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
         ],
@@ -176,7 +176,7 @@ class _LastSessionSection extends StatelessWidget {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: AppColors.neutral100,
+                color: AppColors.darkSurfaceCard,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(

@@ -124,4 +124,11 @@ abstract class AIWorkoutRepository {
   Future<Either<Failure, AlternativeExercisesResult>> getAlternativeExercises({
     required String exerciseId,
   });
+
+  /// Get exercises the client has previously done in the same movement group
+  Future<Either<Failure, List<SessionAlternative>>>
+      getClientPreviousExercises({
+    required String clientId,
+    required String exerciseId,
+  });
 }

@@ -141,10 +141,10 @@ class _PreviousSessionReviewScreenState
   Widget build(BuildContext context) {
     _initExercisesIfNeeded();
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         title: const Text('이전 운동 복사'),
-        backgroundColor: AppColors.surfaceLight,
+        backgroundColor: AppColors.darkBackground,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -218,10 +218,10 @@ class _PreviousSessionReviewScreenState
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
+              color: AppColors.darkBackground,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
+                  color: Colors.white.withValues(alpha: 0.015),
                   blurRadius: 10,
                   offset: const Offset(0, -5),
                 ),
@@ -364,7 +364,7 @@ class _SessionHeader extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Column(
@@ -428,7 +428,7 @@ class _SessionHeader extends StatelessWidget {
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -507,7 +507,7 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.neutral100,
+        color: AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
@@ -546,7 +546,7 @@ class _SectionCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Column(
@@ -565,7 +565,7 @@ class _SectionCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.neutralBlack,
+                        color: AppColors.darkTextPrimary,
                       ),
                     ),
                     if (subtitle != null)
@@ -608,12 +608,12 @@ class _ExerciseCard extends StatelessWidget {
         ? AppColors.success.withValues(alpha: 0.3)
         : exercise.isChanged
             ? AppColors.primary.withValues(alpha: 0.3)
-            : AppColors.neutral200;
+            : AppColors.darkBorder;
     final bgColor = exercise.isNew
         ? AppColors.success.withValues(alpha: 0.05)
         : exercise.isChanged
             ? AppColors.primary.withValues(alpha: 0.05)
-            : AppColors.surfaceLight;
+            : AppColors.darkSurface;
 
     return InkWell(
       onTap: onTap,
@@ -660,7 +660,7 @@ class _ExerciseCard extends StatelessWidget {
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.neutralBlack,
+                            color: AppColors.darkTextPrimary,
                           ),
                         ),
                       ),

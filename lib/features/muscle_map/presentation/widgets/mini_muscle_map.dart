@@ -57,7 +57,7 @@ class MiniMuscleMap extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'Muscle Activity',
+                    'Stats',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -72,6 +72,15 @@ class MiniMuscleMap extends StatelessWidget {
                     ),
                 ],
               ),
+            if (showTitle)
+              const Text(
+                '최근 7일',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
             if (showTitle) const SizedBox(height: AppSpacing.sm),
             // SVG-based body map
             Center(
@@ -81,8 +90,8 @@ class MiniMuscleMap extends StatelessWidget {
               ),
             ),
             if (showNeedsAttention && needsAttention.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.sm),
-              _NeedsAttentionBadge(muscles: needsAttention),
+              const SizedBox(height: AppSpacing.md),
+              _NeedsAttentionBadges(muscles: needsAttention),
             ],
           ],
         ),
@@ -107,48 +116,125 @@ class MiniMuscleMap extends StatelessWidget {
   }
 }
 
-class _NeedsAttentionBadge extends StatelessWidget {
+enum _BodyRegion {
+  upperFront('상체 앞', Color(0xFF4C6EF5)),
+  upperBack('상체 뒤', Color(0xFF9775FA)),
+  lowerFront('하체 앞', Color(0xFF20C997)),
+  lowerBack('하체 뒤', Color(0xFFFF922B));
+
+  final String label;
+  final Color color;
+  const _BodyRegion(this.label, this.color);
+
+  static _BodyRegion of(MuscleGroup group) {
+    if (group.isUpperBody) {
+      return group.isFrontView ? upperFront : upperBack;
+    }
+    return group.isFrontView ? lowerFront : lowerBack;
+  }
+}
+
+class _NeedsAttentionBadges extends StatelessWidget {
   final List<MuscleActivityEntity> muscles;
 
-  const _NeedsAttentionBadge({required this.muscles});
+  const _NeedsAttentionBadges({required this.muscles});
 
   @override
   Widget build(BuildContext context) {
-    final displayMuscles = muscles.take(3).toList();
-    final remaining = muscles.length - 3;
+    // Group muscles by body region
+    final grouped = <_BodyRegion, List<MuscleActivityEntity>>{};
+    for (final muscle in muscles) {
+      final region = _BodyRegion.of(muscle.muscleGroup);
+      (grouped[region] ??= []).add(muscle);
+    }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.xs,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.info_outline,
-            size: 14,
-            color: AppColors.warning,
+    // Display in consistent order
+    final orderedRegions = _BodyRegion.values
+        .where((r) => grouped.containsKey(r))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          '운동이 필요한 부위',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.error.withValues(alpha: 0.8),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Flexible(
-            child: Text(
-              remaining > 0
-                  ? '${displayMuscles.map((m) => m.muscleGroup.displayNameKo).join(', ')} +$remaining need work'
-                  : '${displayMuscles.map((m) => m.muscleGroup.displayNameKo).join(', ')} need work',
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.warning,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (final region in orderedRegions) ...[
+          if (region != orderedRegions.first)
+            const SizedBox(height: AppSpacing.xs),
+          _RegionRow(
+            region: region,
+            muscles: grouped[region]!,
           ),
         ],
-      ),
+      ],
+    );
+  }
+}
+
+class _RegionRow extends StatelessWidget {
+  final _BodyRegion region;
+  final List<MuscleActivityEntity> muscles;
+
+  const _RegionRow({
+    required this.region,
+    required this.muscles,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = region.color;
+
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: 4,
+          ),
+          child: Text(
+            region.label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ),
+        for (final muscle in muscles)
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius:
+                  BorderRadius.circular(AppSpacing.radiusSm),
+              border: Border.all(
+                color: color.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Text(
+              muscle.muscleGroup.displayNameKo,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

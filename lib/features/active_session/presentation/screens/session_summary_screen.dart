@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -71,7 +72,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: AppColors.darkBackground,
       appBar: AppBar(
         title: const Text('Session Complete'),
         automaticallyImplyLeading: false,
@@ -109,7 +110,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.neutralBlack,
+                      color: AppColors.darkTextPrimary,
                     ),
                   ),
                   if (_session!.clientName != null) ...[
@@ -212,7 +213,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: AppColors.neutralBlack,
+                color: AppColors.darkTextPrimary,
               ),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -222,6 +223,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                   topSet: exercise.topSet,
                   totalVolume: exercise.totalVolume,
                   hasPR: exercise.hasPR,
+                  notes: exercise.notes,
                 )),
             const SizedBox(height: AppSpacing.xl),
             // Action buttons
@@ -295,7 +297,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
             return Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
+                color: AppColors.darkSurfaceElevated,
                 borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
               ),
               child: Column(
@@ -311,7 +313,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.neutralBlack,
+                          color: AppColors.darkTextPrimary,
                         ),
                       ),
                       const Spacer(),
@@ -342,7 +344,7 @@ class _SessionSummaryScreenState extends ConsumerState<SessionSummaryScreen> {
           loading: () => Container(
             height: 200,
             decoration: BoxDecoration(
-              color: AppColors.surfaceElevated,
+              color: AppColors.darkSurfaceElevated,
               borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             ),
             child: const Center(
@@ -413,6 +415,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
   final ExerciseSetEntity? topSet;
   final double totalVolume;
   final bool hasPR;
+  final String? notes;
 
   const _ExerciseSummaryCard({
     required this.exerciseName,
@@ -420,6 +423,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
     this.topSet,
     required this.totalVolume,
     required this.hasPR,
+    this.notes,
   });
 
   @override
@@ -428,7 +432,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
+        color: AppColors.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border: hasPR
             ? Border.all(color: const Color(0xFFFFD700), width: 2)
@@ -445,7 +449,7 @@ class _ExerciseSummaryCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
               ),
@@ -513,8 +517,48 @@ class _ExerciseSummaryCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 4),
                 child: SetRow(set: set),
               )),
+          // Show memo if present
+          ..._buildMemoSection(),
         ],
       ),
     );
+  }
+
+  List<Widget> _buildMemoSection() {
+    if (notes == null || notes!.isEmpty) return [];
+    try {
+      final json = jsonDecode(notes!) as Map<String, dynamic>;
+      final memo = json['trainerMemo'] as String?;
+      if (memo == null || memo.isEmpty) return [];
+      return [
+        Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurfaceCard,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.edit_note, size: 16, color: AppColors.neutral600),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  memo,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                    color: AppColors.neutral700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ];
+    } catch (_) {
+      return [];
+    }
   }
 }

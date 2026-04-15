@@ -78,7 +78,7 @@ class CountdownTimer extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: progress.clamp(0.0, 1.0),
                 strokeWidth: 8,
-                backgroundColor: AppColors.neutral200,
+                backgroundColor: AppColors.darkBorder,
                 valueColor: AlwaysStoppedAnimation<Color>(timerColor),
               ),
             ),
@@ -164,7 +164,7 @@ class _PresetButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? AppColors.primary : AppColors.neutral100,
+      color: isSelected ? AppColors.primary : AppColors.darkSurfaceCard,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: InkWell(
         onTap: onTap,
@@ -204,7 +204,7 @@ class _ControlButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isPrimary ? AppColors.primary : AppColors.neutral200,
+      color: isPrimary ? AppColors.primary : AppColors.darkSurfaceCard,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: InkWell(
         onTap: onTap,

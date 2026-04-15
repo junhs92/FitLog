@@ -24,8 +24,8 @@ class AchievementSection extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFFFFF9DB), // Light gold
-            const Color(0xFFFFEC99), // Bright gold
+            const Color(0xFF2A2518), // Dark gold
+            const Color(0xFF332D1A), // Deep gold
           ],
         ),
         borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
@@ -50,7 +50,7 @@ class AchievementSection extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.neutralBlack,
+                  color: AppColors.darkTextPrimary,
                 ),
               ),
               const Spacer(),
@@ -68,7 +68,7 @@ class AchievementSection extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
               ),
@@ -100,7 +100,7 @@ class AchievementCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: AppColors.neutralWhite.withOpacity(0.8),
+        color: AppColors.darkSurfaceCard.withOpacity(0.8),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       ),
       child: Row(
@@ -134,7 +134,7 @@ class AchievementCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.neutralBlack,
+                        color: AppColors.darkTextPrimary,
                       ),
                     ),
                     if (achievement.subtitle != null) ...[
@@ -241,7 +241,7 @@ class AchievementBadge extends StatelessWidget {
             style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
         ],

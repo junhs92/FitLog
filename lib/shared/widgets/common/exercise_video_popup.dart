@@ -33,7 +33,7 @@ class ExerciseVideoPopup extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 60),
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: AppColors.darkSurfaceCard,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -64,7 +64,7 @@ class ExerciseVideoPopup extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.neutral300,
+                  color: AppColors.darkBorder,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -106,7 +106,7 @@ class ExerciseVideoPopup extends StatelessWidget {
             style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -171,7 +171,7 @@ class ExerciseVideoPopup extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: AppColors.neutralBlack,
+                color: AppColors.darkTextPrimary,
               ),
             ),
           ),

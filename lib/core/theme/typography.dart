@@ -96,4 +96,84 @@ class AppTypography {
           color: AppColors.neutral700,
         ),
       );
+
+  // Dark theme text styles
+  static TextTheme get darkTextTheme => TextTheme(
+        displayLarge: GoogleFonts.inter(
+          fontSize: 32,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+          letterSpacing: -0.5,
+          color: AppColors.darkTextPrimary,
+        ),
+        displayMedium: GoogleFonts.inter(
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+          height: 1.3,
+          letterSpacing: -0.3,
+          color: AppColors.darkTextPrimary,
+        ),
+        headlineLarge: GoogleFonts.inter(
+          fontSize: 24,
+          fontWeight: FontWeight.w600,
+          height: 1.3,
+          color: AppColors.darkTextPrimary,
+        ),
+        headlineMedium: GoogleFonts.inter(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          height: 1.4,
+          color: AppColors.darkTextPrimary,
+        ),
+        headlineSmall: GoogleFonts.inter(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          height: 1.4,
+          color: AppColors.darkTextPrimary,
+        ),
+        titleLarge: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          height: 1.5,
+          color: AppColors.darkTextPrimary,
+        ),
+        titleMedium: GoogleFonts.inter(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          height: 1.5,
+          color: AppColors.darkTextPrimary,
+        ),
+        bodyLarge: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: AppColors.darkTextPrimary,
+        ),
+        bodyMedium: GoogleFonts.inter(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: AppColors.darkTextSecondary,
+        ),
+        bodySmall: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          color: AppColors.darkTextTertiary,
+        ),
+        labelLarge: GoogleFonts.inter(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          letterSpacing: 0.1,
+          color: AppColors.darkTextPrimary,
+        ),
+        labelMedium: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 1.5,
+          letterSpacing: 0.1,
+          color: AppColors.darkTextSecondary,
+        ),
+      );
 }

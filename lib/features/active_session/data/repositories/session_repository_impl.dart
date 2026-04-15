@@ -1,4 +1,5 @@
 import 'package:dartz/dartz.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../shared/models/result.dart';
 import '../../domain/entities/exercise_entity.dart';
 import '../../domain/entities/exercise_set_entity.dart';
@@ -361,6 +362,7 @@ class SessionRepositoryImpl implements SessionRepository {
       );
       return Right(exercises);
     } catch (e) {
+      debugPrint('🔴 [SessionRepo] getRecentExercises error: $e');
       return Left(ServerFailure(e.toString()));
     }
   }

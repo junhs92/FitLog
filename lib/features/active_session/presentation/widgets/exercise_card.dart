@@ -41,7 +41,7 @@ class ExerciseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? AppColors.primary.withOpacity(0.1) : AppColors.surfaceLight,
+      color: isSelected ? AppColors.primary.withOpacity(0.1) : AppColors.darkSurface,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       elevation: isSelected ? 2 : 0,
       child: InkWell(
@@ -52,7 +52,7 @@ class ExerciseCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
             border: Border.all(
-              color: isSelected ? AppColors.primary : AppColors.neutral300,
+              color: isSelected ? AppColors.primary : AppColors.darkBorder,
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -90,7 +90,7 @@ class ExerciseCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: isSelected ? AppColors.primary : AppColors.neutralBlack,
+                        color: isSelected ? AppColors.primary : AppColors.darkTextPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -163,7 +163,7 @@ class ExerciseCardCompact extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: InkWell(
         onTap: onTap,
@@ -200,7 +200,7 @@ class ExerciseCardCompact extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.neutralBlack,
+                  color: AppColors.darkTextPrimary,
                 ),
               ),
             ],

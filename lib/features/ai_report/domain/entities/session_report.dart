@@ -60,6 +60,9 @@ class SessionReportEntity {
   final DateTime? sentAt;
   final DateTime? viewedAt;
   final String? htmlUrl;
+  final String? pdfUrl;
+  final DateTime? emailSentAt;
+  final DateTime? pushSentAt;
 
   const SessionReportEntity({
     required this.id,
@@ -76,6 +79,9 @@ class SessionReportEntity {
     this.sentAt,
     this.viewedAt,
     this.htmlUrl,
+    this.pdfUrl,
+    this.emailSentAt,
+    this.pushSentAt,
   });
 
   SessionReportEntity copyWith({
@@ -93,6 +99,9 @@ class SessionReportEntity {
     DateTime? sentAt,
     DateTime? viewedAt,
     String? htmlUrl,
+    String? pdfUrl,
+    DateTime? emailSentAt,
+    DateTime? pushSentAt,
   }) {
     return SessionReportEntity(
       id: id ?? this.id,
@@ -109,6 +118,9 @@ class SessionReportEntity {
       sentAt: sentAt ?? this.sentAt,
       viewedAt: viewedAt ?? this.viewedAt,
       htmlUrl: htmlUrl ?? this.htmlUrl,
+      pdfUrl: pdfUrl ?? this.pdfUrl,
+      emailSentAt: emailSentAt ?? this.emailSentAt,
+      pushSentAt: pushSentAt ?? this.pushSentAt,
     );
   }
 }

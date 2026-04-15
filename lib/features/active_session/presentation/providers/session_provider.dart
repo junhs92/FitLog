@@ -28,6 +28,7 @@ import '../../../client_management/presentation/providers/client_provider.dart';
 import '../../../ai_workout/presentation/providers/ai_workout_provider.dart';
 import '../../../ai_workout/domain/entities/workout_program.dart';
 import '../../../auth/presentation/providers/auth_provider.dart';
+import '../../../muscle_map/presentation/providers/muscle_activity_provider.dart';
 
 /// Provider for Supabase client
 final supabaseClientProvider = Provider<SupabaseClient>((ref) {
@@ -124,6 +125,13 @@ class ActiveSessionState {
   final Map<String, List<SetComment>> exerciseComments;
   final Map<String, Map<SetComment, String>> exerciseCommentDetails;
 
+  // Free-form memo per exercise
+  final String currentMemo;
+  final Map<String, String> exerciseMemos;
+
+  // Goal-based rest timer default
+  final int goalRestSeconds;
+
   const ActiveSessionState({
     this.session,
     this.currentExerciseIndex = 0,
@@ -144,6 +152,9 @@ class ActiveSessionState {
     this.isCountdownRunning = false,
     this.exerciseComments = const {},
     this.exerciseCommentDetails = const {},
+    this.currentMemo = '',
+    this.exerciseMemos = const {},
+    this.goalRestSeconds = 90,
   });
 
   bool get hasActiveSession => session != null && session!.isInProgress;
@@ -195,6 +206,9 @@ class ActiveSessionState {
     bool? isCountdownRunning,
     Map<String, List<SetComment>>? exerciseComments,
     Map<String, Map<SetComment, String>>? exerciseCommentDetails,
+    String? currentMemo,
+    Map<String, String>? exerciseMemos,
+    int? goalRestSeconds,
   }) {
     return ActiveSessionState(
       session: session ?? this.session,
@@ -216,6 +230,9 @@ class ActiveSessionState {
       isCountdownRunning: isCountdownRunning ?? this.isCountdownRunning,
       exerciseComments: exerciseComments ?? this.exerciseComments,
       exerciseCommentDetails: exerciseCommentDetails ?? this.exerciseCommentDetails,
+      currentMemo: currentMemo ?? this.currentMemo,
+      exerciseMemos: exerciseMemos ?? this.exerciseMemos,
+      goalRestSeconds: goalRestSeconds ?? this.goalRestSeconds,
     );
   }
 }
@@ -225,8 +242,17 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   final SessionRepository _repository;
   final Ref _ref;
   Timer? _countdownTimer;
+  ExercisePrescription _goalPrescription =
+      ExercisePrescription.goalPrescriptions['general_fitness']!;
 
   ActiveSessionNotifier(this._repository, this._ref) : super(const ActiveSessionState());
+
+  void _resolveGoalPrescription(String clientId) {
+    final client = _ref.read(clientProvider(clientId)).valueOrNull;
+    if (client != null && client.goals.isNotEmpty) {
+      _goalPrescription = ExercisePrescription.forClientGoal(client.goals.first);
+    }
+  }
 
   @override
   void dispose() {
@@ -238,13 +264,15 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void _initializeFromFirstExercise(SessionEntity session) {
     if (session.exercises.isEmpty) return;
 
+    _resolveGoalPrescription(session.clientId);
+
     final exercise = session.exercises[0];
     final exerciseEntity = exercise.exercise;
 
-    // Priority: last set of this exercise > target from program > defaults
+    // Priority: last set of this exercise > target from program > goal prescription midpoint
     double weight = 20.0;
-    int reps = 10;
-    double rpe = 7.0; // Default RPE to 7
+    int reps = _goalPrescription.midReps;
+    double rpe = _goalPrescription.midRpe;
 
     if (exercise.sets.isNotEmpty) {
       final lastSet = exercise.sets.last;
@@ -253,7 +281,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     } else {
       weight = exercise.recommendedWeight;
       reps = exercise.recommendedReps;
-      rpe = exercise.recommendedRpe ?? 7.0; // Use recommendation or default to 7
+      rpe = exercise.recommendedRpe ?? _goalPrescription.midRpe;
     }
 
     // For bodyweight exercises, default weight to 0
@@ -273,6 +301,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       currentDuration: defaultDuration,
       countdownRemaining: defaultDuration,
       isCountdownRunning: false,
+      goalRestSeconds: session.restSeconds,
     );
 
     // Load exercise history for PR display
@@ -322,6 +351,19 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         final lastSessionSets = history
             .where((s) => s.sessionExerciseId == lastSessionId)
             .toList();
+
+        // If exercise has no sets yet, initialize from PR record
+        final currentExercise = state.currentExercise;
+        if (currentExercise != null && currentExercise.sets.isEmpty && pr != null) {
+          state = state.copyWith(
+            exercisePR: pr,
+            lastSessionSets: lastSessionSets,
+            currentWeight: pr.weight ?? state.currentWeight,
+            currentReps: pr.reps ?? state.currentReps,
+            currentRpe: pr.rpe ?? state.currentRpe,
+          );
+          return;
+        }
 
         state = state.copyWith(
           exercisePR: pr,
@@ -553,7 +595,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     );
   }
 
-  /// Swap current exercise with a new one
+  /// Swap current exercise with a new one.
+  /// If the current exercise has recorded sets, keep it and insert the
+  /// alternative after it. Otherwise replace it entirely.
   Future<bool> swapExercise({
     required String newExerciseId,
   }) async {
@@ -564,49 +608,80 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
     try {
       final currentIndex = state.currentExerciseIndex;
+      final hasSets = currentExercise.sets.isNotEmpty;
 
-      // 1. Remove old exercise from session_exercises
-      await _repository.removeExerciseFromSession(currentExercise.id);
+      if (hasSets) {
+        // Keep the current exercise and insert the alternative after it
+        final addResult = await _repository.addExerciseToSessionById(
+          sessionId: state.session!.id,
+          exerciseId: newExerciseId,
+          order: currentIndex + 1,
+        );
 
-      // 2. Add new exercise at same position
-      final addResult = await _repository.addExerciseToSessionById(
-        sessionId: state.session!.id,
-        exerciseId: newExerciseId,
-        order: currentIndex,
-      );
+        return addResult.fold(
+          (failure) {
+            state = state.copyWith(isLoading: false, error: failure.message);
+            return false;
+          },
+          (newSessionExercise) {
+            final updatedExercises =
+                List<SessionExerciseEntity>.from(state.session!.exercises);
+            updatedExercises.insert(currentIndex + 1, newSessionExercise);
 
-      return addResult.fold(
-        (failure) {
-          state = state.copyWith(isLoading: false, error: failure.message);
-          return false;
-        },
-        (newSessionExercise) {
-          // 3. Update exercises list
-          final updatedExercises =
-              List<SessionExerciseEntity>.from(state.session!.exercises);
-          updatedExercises[currentIndex] = newSessionExercise;
+            final updatedSession =
+                state.session!.copyWith(exercises: updatedExercises);
 
-          final updatedSession =
-              state.session!.copyWith(exercises: updatedExercises);
+            state = state.copyWith(
+              session: updatedSession,
+              isLoading: false,
+            );
 
-          // 4. Reset weight/reps for new exercise
-          state = state.copyWith(
-            session: updatedSession,
-            isLoading: false,
-            currentWeight: newSessionExercise.recommendedWeight,
-            currentReps: newSessionExercise.recommendedReps,
-            currentRpe: 7.0, // Default RPE to 7
-          );
+            // Navigate to the newly inserted exercise
+            goToExercise(currentIndex + 1);
+            return true;
+          },
+        );
+      } else {
+        // No sets recorded — replace entirely
+        await _repository.removeExerciseFromSession(currentExercise.id);
 
-          // 5. Load exercise history for new exercise
-          final clientId = state.session?.clientId;
-          if (clientId != null) {
-            _loadExerciseHistory(clientId, newSessionExercise.exercise.id);
-          }
+        final addResult = await _repository.addExerciseToSessionById(
+          sessionId: state.session!.id,
+          exerciseId: newExerciseId,
+          order: currentIndex,
+        );
 
-          return true;
-        },
-      );
+        return addResult.fold(
+          (failure) {
+            state = state.copyWith(isLoading: false, error: failure.message);
+            return false;
+          },
+          (newSessionExercise) {
+            final updatedExercises =
+                List<SessionExerciseEntity>.from(state.session!.exercises);
+            updatedExercises[currentIndex] = newSessionExercise;
+
+            final updatedSession =
+                state.session!.copyWith(exercises: updatedExercises);
+
+            state = state.copyWith(
+              session: updatedSession,
+              isLoading: false,
+              currentWeight: newSessionExercise.recommendedWeight,
+              currentReps: newSessionExercise.recommendedReps,
+              currentRpe: _goalPrescription.midRpe,
+            );
+
+            // Load exercise history for new exercise
+            final clientId = state.session?.clientId;
+            if (clientId != null) {
+              _loadExerciseHistory(clientId, newSessionExercise.exercise.id);
+            }
+
+            return true;
+          },
+        );
+      }
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
       return false;
@@ -790,6 +865,11 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     state = state.copyWith(currentCommentDetails: details);
   }
 
+  /// Update free-form memo for current exercise
+  void setMemo(String memo) {
+    state = state.copyWith(currentMemo: memo);
+  }
+
   // ============================================================
   // TIMER MODE METHODS (for isometric exercises)
   // ============================================================
@@ -876,23 +956,35 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void goToExercise(int index) {
     if (index < 0 || index >= state.session!.exercises.length) return;
 
-    // Save current exercise comments before switching
+    // Save current exercise comments and memo before switching
     final currentExercise = state.currentExercise;
     Map<String, List<SetComment>> updatedExerciseComments = Map.from(state.exerciseComments);
     Map<String, Map<SetComment, String>> updatedExerciseCommentDetails = Map.from(state.exerciseCommentDetails);
+    Map<String, String> updatedExerciseMemos = Map.from(state.exerciseMemos);
 
-    if (currentExercise != null && state.currentComments.isNotEmpty) {
-      updatedExerciseComments[currentExercise.id] = List.from(state.currentComments);
-      updatedExerciseCommentDetails[currentExercise.id] = Map.from(state.currentCommentDetails);
+    if (currentExercise != null) {
+      if (state.currentComments.isNotEmpty) {
+        updatedExerciseComments[currentExercise.id] = List.from(state.currentComments);
+        updatedExerciseCommentDetails[currentExercise.id] = Map.from(state.currentCommentDetails);
+      }
+      if (state.currentMemo.isNotEmpty) {
+        updatedExerciseMemos[currentExercise.id] = state.currentMemo;
+      }
+    }
+
+    // Resolve goal prescription for this session's client
+    final clientId = state.session?.clientId;
+    if (clientId != null) {
+      _resolveGoalPrescription(clientId);
     }
 
     final exercise = state.session!.exercises[index];
     final exerciseEntity = exercise.exercise;
 
-    // Priority: last set of this exercise > target from program > defaults
+    // Priority: last set of this exercise > target from program > goal prescription midpoint
     double weight = 20.0;
-    int reps = 10;
-    double rpe = 7.0; // Default RPE to 7
+    int reps = _goalPrescription.midReps;
+    double rpe = _goalPrescription.midRpe;
 
     if (exercise.sets.isNotEmpty) {
       // Use last set values if available
@@ -903,7 +995,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       // Use AI-recommended target values for first set
       weight = exercise.recommendedWeight;
       reps = exercise.recommendedReps;
-      rpe = exercise.recommendedRpe ?? 7.0; // Use recommendation or default to 7
+      rpe = exercise.recommendedRpe ?? _goalPrescription.midRpe;
     }
 
     // For bodyweight exercises, default weight to 0
@@ -915,9 +1007,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final isTimerMode = exerciseEntity.isIsometric;
     final defaultDuration = Duration(seconds: exerciseEntity.defaultDurationSeconds);
 
-    // Restore comments for the target exercise (or empty if none)
+    // Restore comments and memo for the target exercise (or empty if none)
     final restoredComments = updatedExerciseComments[exercise.id] ?? [];
     final restoredCommentDetails = updatedExerciseCommentDetails[exercise.id] ?? {};
+    final restoredMemo = updatedExerciseMemos[exercise.id] ?? '';
 
     state = state.copyWith(
       currentExerciseIndex: index,
@@ -927,16 +1020,18 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       currentTags: [],
       currentComments: restoredComments,
       currentCommentDetails: restoredCommentDetails,
+      currentMemo: restoredMemo,
       isTimerMode: isTimerMode,
       currentDuration: defaultDuration,
       countdownRemaining: defaultDuration,
       isCountdownRunning: false,
       exerciseComments: updatedExerciseComments,
       exerciseCommentDetails: updatedExerciseCommentDetails,
+      exerciseMemos: updatedExerciseMemos,
+      goalRestSeconds: _goalPrescription.midRestSeconds,
     );
 
     // Load exercise history for PR display
-    final clientId = state.session?.clientId;
     if (clientId != null) {
       _loadExerciseHistory(clientId, exercise.exercise.id);
     }
@@ -1016,6 +1111,14 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           isLoading: false,
         );
 
+        // Invalidate session-dependent providers so they refetch with new data
+        _ref.invalidate(clientRecentSessionsProvider(clientId));
+        _ref.invalidate(recentExercisesProvider(clientId));
+        _ref.invalidate(clientMuscleMapProvider((clientId: clientId, dayRange: 7)));
+        _ref.invalidate(clientMuscleMapProvider((clientId: clientId, dayRange: 14)));
+        _ref.invalidate(clientMuscleMapProvider((clientId: clientId, dayRange: 30)));
+        _ref.invalidate(clientMuscleMapProvider((clientId: clientId, dayRange: null)));
+
         // Update program's lastSessionFocus based on exercises worked (fire and forget)
         _updateProgramFocusAfterSession(clientId, exercisesBeforeCompletion);
 
@@ -1024,35 +1127,45 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     );
   }
 
-  /// Save current exercise comments to exerciseComments map
+  /// Save current exercise comments and memo to their respective maps
   void _saveCurrentExerciseComments() {
     final currentExercise = state.currentExercise;
-    if (currentExercise == null || state.currentComments.isEmpty) return;
+    if (currentExercise == null || (state.currentComments.isEmpty && state.currentMemo.isEmpty)) return;
 
     final updatedExerciseComments = Map<String, List<SetComment>>.from(state.exerciseComments);
     final updatedExerciseCommentDetails = Map<String, Map<SetComment, String>>.from(state.exerciseCommentDetails);
+    final updatedExerciseMemos = Map<String, String>.from(state.exerciseMemos);
 
-    updatedExerciseComments[currentExercise.id] = List.from(state.currentComments);
-    updatedExerciseCommentDetails[currentExercise.id] = Map.from(state.currentCommentDetails);
+    if (state.currentComments.isNotEmpty) {
+      updatedExerciseComments[currentExercise.id] = List.from(state.currentComments);
+      updatedExerciseCommentDetails[currentExercise.id] = Map.from(state.currentCommentDetails);
+    }
+    if (state.currentMemo.isNotEmpty) {
+      updatedExerciseMemos[currentExercise.id] = state.currentMemo;
+    }
 
     state = state.copyWith(
       exerciseComments: updatedExerciseComments,
       exerciseCommentDetails: updatedExerciseCommentDetails,
+      exerciseMemos: updatedExerciseMemos,
     );
   }
 
-  /// Save all exercise comments to database
+  /// Save all exercise comments and memos to database
   Future<void> _saveExerciseCommentsToDatabase(List<SessionExerciseEntity> exercises) async {
     debugPrint('🟢 _saveExerciseCommentsToDatabase: Saving comments for ${exercises.length} exercises');
 
     for (final exercise in exercises) {
       final comments = state.exerciseComments[exercise.id];
-      if (comments == null || comments.isEmpty) continue;
+      final memo = state.exerciseMemos[exercise.id];
+      final hasComments = comments != null && comments.isNotEmpty;
+      final hasMemo = memo != null && memo.isNotEmpty;
+      if (!hasComments && !hasMemo) continue;
 
       final commentDetails = state.exerciseCommentDetails[exercise.id] ?? {};
 
-      // Build notes JSON with trainer comments
-      final notesJson = _buildExerciseNotesJson(exercise, comments, commentDetails);
+      // Build notes JSON with trainer comments and memo
+      final notesJson = _buildExerciseNotesJson(exercise, comments ?? [], commentDetails, memo: memo);
 
       debugPrint('🟢 Saving comments for exercise ${exercise.id}: $notesJson');
 
@@ -1065,12 +1178,13 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     debugPrint('🟢 _saveExerciseCommentsToDatabase: Complete');
   }
 
-  /// Build notes JSON with existing metadata and trainer comments
+  /// Build notes JSON with existing metadata, trainer comments, and memo
   String _buildExerciseNotesJson(
     SessionExerciseEntity exercise,
     List<SetComment> comments,
-    Map<SetComment, String> commentDetails,
-  ) {
+    Map<SetComment, String> commentDetails, {
+    String? memo,
+  }) {
     // Start with existing notes if any
     Map<String, dynamic> notesData = {};
     if (exercise.notes != null && exercise.notes!.isNotEmpty) {
@@ -1082,16 +1196,23 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
 
     // Add trainer comments
-    final trainerComments = comments.map((c) {
-      final detail = commentDetails[c];
-      return {
-        'key': c.databaseKey,
-        'displayName': c.displayName,
-        if (detail != null && detail.isNotEmpty) 'detail': detail,
-      };
-    }).toList();
+    if (comments.isNotEmpty) {
+      final trainerComments = comments.map((c) {
+        final detail = commentDetails[c];
+        return {
+          'key': c.databaseKey,
+          'displayName': c.displayName,
+          if (detail != null && detail.isNotEmpty) 'detail': detail,
+        };
+      }).toList();
 
-    notesData['trainerComments'] = trainerComments;
+      notesData['trainerComments'] = trainerComments;
+    }
+
+    // Add trainer memo
+    if (memo != null && memo.isNotEmpty) {
+      notesData['trainerMemo'] = memo;
+    }
 
     return jsonEncode(notesData);
   }
@@ -1618,13 +1739,18 @@ final contextualRecommendationsProvider = Provider.family<ContextualRecommendati
     return const ContextualRecommendationsState();
   }
 
+  // Get client's previously done exercise IDs for prioritization
+  final recentAsync = ref.watch(recentExercisesProvider(clientId));
+  final recentExerciseIds = recentAsync.valueOrNull
+      ?.map((e) => e.id)
+      .toSet() ?? <String>{};
+
   // Get complementary recommendations (10 for expand/collapse UI)
   final complementary = service.getComplementaryRecommendations(
     allExercises: exercises,
     context: context,
     limit: 10,
   );
-  debugPrint('🟣 [contextualRecommendationsProvider] Complementary: ${complementary.map((r) => r.exercise.displayName).join(", ")}');
 
   // Get supplementary recommendations (10 for expand/collapse UI)
   final supplementary = service.getSupplementaryRecommendations(
@@ -1632,11 +1758,29 @@ final contextualRecommendationsProvider = Provider.family<ContextualRecommendati
     context: context,
     limit: 10,
   );
-  debugPrint('🟣 [contextualRecommendationsProvider] Supplementary: ${supplementary.map((r) => r.exercise.displayName).join(", ")}');
+
+  // Re-sort: exercises the client has done before come first (stable sort)
+  List<LabeledRecommendation> _prioritizeByHistory(List<LabeledRecommendation> recs) {
+    if (recentExerciseIds.isEmpty) return recs;
+    final sorted = List<LabeledRecommendation>.from(recs);
+    sorted.sort((a, b) {
+      final aDone = recentExerciseIds.contains(a.exercise.id) ? 0 : 1;
+      final bDone = recentExerciseIds.contains(b.exercise.id) ? 0 : 1;
+      if (aDone != bDone) return aDone.compareTo(bDone);
+      return 0; // preserve original score order for same group
+    });
+    return sorted;
+  }
+
+  final sortedComplementary = _prioritizeByHistory(complementary);
+  final sortedSupplementary = _prioritizeByHistory(supplementary);
+
+  debugPrint('🟣 [contextualRecommendationsProvider] Complementary: ${sortedComplementary.map((r) => r.exercise.displayName).join(", ")}');
+  debugPrint('🟣 [contextualRecommendationsProvider] Supplementary: ${sortedSupplementary.map((r) => r.exercise.displayName).join(", ")}');
 
   return ContextualRecommendationsState(
-    complementary: complementary,
-    supplementary: supplementary,
+    complementary: sortedComplementary,
+    supplementary: sortedSupplementary,
   );
 });
 
@@ -1779,10 +1923,18 @@ final sessionAchievementsProvider = FutureProvider.family<List<DetectedAchieveme
 
   final clientId = currentSession.clientId;
 
+  // Determine if current user is the client (not the trainer)
+  // When a client views their report, getSessions must use asClient=true
+  // to filter by client_id instead of trainer_id
+  final currentUser = ref.read(authStateProvider).value;
+  final isClient = currentUser != null && currentUser.id == clientId;
+  debugPrint('🏆 [sessionAchievementsProvider] currentUserId: ${currentUser?.id}, clientId: $clientId, isClient: $isClient');
+
   // Fetch session history (excluding current session)
   final historyResult = await repository.getSessions(
-    clientId: clientId,
+    clientId: isClient ? null : clientId,
     status: SessionStatus.completed,
+    asClient: isClient,
   );
   final sessionHistory = historyResult.fold(
     (failure) => <SessionEntity>[],

@@ -16,6 +16,8 @@ class FitLogApp extends ConsumerWidget {
       title: 'FitLog Pro',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.dark,
       routerConfig: router,
     );
   }

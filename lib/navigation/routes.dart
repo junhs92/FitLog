@@ -42,6 +42,7 @@ class Routes {
   static const String clientSession = '/client/session/:id';
   static const String clientReportDetail = '/client/report/:reportId';
   static const String clientSessionReport = '/client/session-report/:sessionId';
+  static const String clientRecord = '/client/record';
   static const String clientAcceptInvite = '/client/invite';
   static const String clientAcceptInviteWithCode = '/client/invite/:code';
 
@@ -91,6 +92,7 @@ class RouteNames {
   static const String clientSession = 'clientSession';
   static const String clientReportDetail = 'clientReportDetail';
   static const String clientSessionReport = 'clientSessionReport';
+  static const String clientRecord = 'clientRecord';
   static const String clientAcceptInvite = 'clientAcceptInvite';
   static const String clientAcceptInviteWithCode = 'clientAcceptInviteWithCode';
 

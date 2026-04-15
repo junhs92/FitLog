@@ -189,7 +189,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       decoration: const BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkBackground,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: _isCheckingProgram
@@ -223,7 +223,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
       width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: AppColors.neutral300,
+        color: AppColors.darkBorder,
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -258,7 +258,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
                 // Program goal badge (only on main view)
@@ -460,7 +460,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -479,7 +479,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
                 return Container(
                   padding: const EdgeInsets.all(AppSpacing.md),
                   decoration: BoxDecoration(
-                    color: AppColors.neutral100,
+                    color: AppColors.darkSurfaceCard,
                     borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
                   ),
                   child: const Center(
@@ -669,7 +669,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.neutralBlack,
+                              color: AppColors.darkTextPrimary,
                             ),
                           ),
                           Text(
@@ -705,7 +705,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w500,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
@@ -756,7 +756,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              color: AppColors.neutralBlack,
+              color: AppColors.darkTextPrimary,
             ),
           ),
         ],
@@ -933,7 +933,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.neutralBlack,
+                        color: AppColors.darkTextPrimary,
                       ),
                     ),
                     Text(
@@ -980,7 +980,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
                   sessionExercise.exercise.displayName,
                   style: const TextStyle(
                     fontWeight: FontWeight.w500,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
                 subtitle: Text(
@@ -1168,7 +1168,7 @@ class _ProgramSelectionSheetState extends ConsumerState<ProgramSelectionSheet> {
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.bold,
-            color: AppColors.neutralBlack,
+            color: AppColors.darkTextPrimary,
           ),
         ),
         if (required) ...[
@@ -1359,7 +1359,7 @@ class _SessionTypeSelectionSheetState
         maxHeight: MediaQuery.of(context).size.height * 0.7,
       ),
       decoration: const BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: AppColors.darkBackground,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
@@ -1380,7 +1380,7 @@ class _SessionTypeSelectionSheetState
       width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: AppColors.neutral300,
+        color: AppColors.darkBorder,
         borderRadius: BorderRadius.circular(2),
       ),
     );
@@ -1415,7 +1415,7 @@ class _SessionTypeSelectionSheetState
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.neutralBlack,
+                    color: AppColors.darkTextPrimary,
                   ),
                 ),
                 if (_currentView == _SheetView.main) ...[
@@ -1875,7 +1875,7 @@ class _SessionTypeSelectionSheetState
           style: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.bold,
-            color: AppColors.neutralBlack,
+            color: AppColors.darkTextPrimary,
           ),
         ),
         if (required) ...[
@@ -2049,10 +2049,10 @@ class _PreviousSessionCard extends StatelessWidget {
 
     return Card(
       elevation: 0,
-      color: AppColors.surfaceElevated,
+      color: AppColors.darkSurfaceElevated,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        side: const BorderSide(color: AppColors.neutral200),
+        side: const BorderSide(color: AppColors.darkBorder),
       ),
       child: InkWell(
         onTap: onTap,
@@ -2083,7 +2083,7 @@ class _PreviousSessionCard extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.neutralBlack,
+                        color: AppColors.darkTextPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),

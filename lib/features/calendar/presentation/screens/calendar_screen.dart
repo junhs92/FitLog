@@ -402,7 +402,7 @@ class _ScheduleDetailSheet extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.neutral300,
+                color: AppColors.darkBorder,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),

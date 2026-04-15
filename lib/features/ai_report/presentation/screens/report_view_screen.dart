@@ -1386,7 +1386,10 @@ class _ExerciseDetailCard extends StatelessWidget {
           ),
           // Trainer Comments Section (if any)
           if (exercise.hasTrainerComments)
-            _ExerciseTrainerCommentsSection(comments: exercise.trainerComments),
+            _ExerciseTrainerCommentsSection(
+              comments: exercise.trainerComments,
+              memo: exercise.trainerMemo,
+            ),
           // Summary footer
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1534,8 +1537,9 @@ class _ExerciseDetailCard extends StatelessWidget {
 /// Trainer comments section for individual exercise
 class _ExerciseTrainerCommentsSection extends StatelessWidget {
   final List<VisualReportTrainerComment> comments;
+  final String? memo;
 
-  const _ExerciseTrainerCommentsSection({required this.comments});
+  const _ExerciseTrainerCommentsSection({required this.comments, this.memo});
 
   @override
   Widget build(BuildContext context) {
@@ -1564,12 +1568,34 @@ class _ExerciseTrainerCommentsSection extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: comments.map((c) => _TrainerCommentChip(comment: c)).toList(),
-          ),
+          if (comments.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: comments.map((c) => _TrainerCommentChip(comment: c)).toList(),
+            ),
+          ],
+          if (memo != null && memo!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.edit_note, size: 16, color: Color(0xFF667eea)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    memo!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: Color(0xFF374151),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

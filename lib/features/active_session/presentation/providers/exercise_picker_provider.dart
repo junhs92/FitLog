@@ -323,8 +323,16 @@ final familyScoredListProvider = Provider.autoDispose.family<List<ScoredFamily>,
       allExercises: allExercises,
       exerciseIdsInSession: exerciseIdsInSession,
     );
-    debugPrint('📋 [familyScoredListProvider] ${families.length} scored families');
-    return families;
+    // Sort compound-first, then accessory, then mobility; each group sorted by score desc
+    final compoundFamilies = families.where((f) => f.isCompound).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    final accessoryFamilies = families.where((f) => f.isAccessory).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    final mobilityFamilies = families.where((f) => f.isMobility).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    final sorted = [...compoundFamilies, ...accessoryFamilies, ...mobilityFamilies];
+    debugPrint('📋 [familyScoredListProvider] ${sorted.length} scored families (${compoundFamilies.length} compound, ${accessoryFamilies.length} accessory, ${mobilityFamilies.length} mobility)');
+    return sorted;
   }
 
   // Fallback: build unscored families directly from exercise library
@@ -355,6 +363,7 @@ final familyScoredListProvider = Provider.autoDispose.family<List<ScoredFamily>,
       availableCount: entry.value.length,
       movementGroup: rep.movementGroup,
       muscleGroup: rep.muscleGroup,
+      familyCategory: rep.category,
     ));
   }
   for (final exercise in ungrouped) {
@@ -368,11 +377,27 @@ final familyScoredListProvider = Provider.autoDispose.family<List<ScoredFamily>,
       movementGroup: exercise.movementGroup,
       muscleGroup: exercise.muscleGroup,
       isCustom: exercise.isCustom,
+      familyCategory: exercise.category,
     ));
   }
 
-  families.sort((a, b) => a.displayNameKo.compareTo(b.displayNameKo));
-  return families;
+  // Sort compound-first, then accessory, then mobility (alphabetical within each group)
+  final compoundFamilies = families.where((f) => f.isCompound).toList()
+    ..sort((a, b) => a.displayNameKo.compareTo(b.displayNameKo));
+  final accessoryFamilies = families.where((f) => f.isAccessory).toList()
+    ..sort((a, b) => a.displayNameKo.compareTo(b.displayNameKo));
+  final mobilityFamilies = families.where((f) => f.isMobility).toList()
+    ..sort((a, b) => a.displayNameKo.compareTo(b.displayNameKo));
+  return [...compoundFamilies, ...accessoryFamilies, ...mobilityFamilies];
+});
+
+/// Provider that detects which accessory muscle groups the client has neglected
+final neglectedAccessoriesProvider = Provider.autoDispose
+    .family<Set<String>, String>((ref, clientId) {
+  final service = ref.read(exerciseRecommendationServiceProvider);
+  final sessionsAsync = ref.watch(clientRecentSessionsProvider(clientId));
+  final sessions = sessionsAsync.valueOrNull ?? [];
+  return service.getNeglectedAccessoryGroups(recentSessions: sessions);
 });
 
 /// A group of sets from one session, with a date

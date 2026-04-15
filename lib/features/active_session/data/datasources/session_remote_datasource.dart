@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/utils/timestamp_utils.dart';
 import '../models/exercise_model.dart';
 import '../models/exercise_set_model.dart';
+import '../models/exercise_swap_history_model.dart';
+import '../models/session_exercise_feedback_model.dart';
 import '../models/session_exercise_input.dart';
 import '../models/session_exercise_model.dart';
 import '../models/session_model.dart';
@@ -752,26 +754,78 @@ class SessionRemoteDataSource {
     required String clientId,
     int limit = 10,
   }) async {
-    final response = await _client
-        .from('session_exercises')
-        .select('''
-          exercises(*)
-        ''')
-        .eq('sessions.client_id', clientId)
-        .order('created_at', ascending: false)
-        .limit(limit);
+    debugPrint('🔍 [getRecentExercises] clientId: $clientId');
+    try {
+      // Step 1: Get recent completed session IDs for this client
+      final sessionsResponse = await _client
+          .from('sessions')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('status', 'completed')
+          .order('started_at', ascending: false)
+          .limit(20);
 
-    // Extract unique exercises
-    final exerciseSet = <String, ExerciseModel>{};
-    for (final item in response as List) {
-      final exerciseData = item['exercises'];
-      if (exerciseData != null) {
-        final exercise = ExerciseModel.fromJson(exerciseData as Map<String, dynamic>);
-        exerciseSet[exercise.id] = exercise;
+      final sessionIds = (sessionsResponse as List)
+          .map((s) => s['id'] as String)
+          .toList();
+
+      debugPrint('🔍 [getRecentExercises] Found ${sessionIds.length} sessions');
+
+      if (sessionIds.isEmpty) return [];
+
+      // Step 2: Get exercise_ids from those sessions
+      final seResponse = await _client
+          .from('session_exercises')
+          .select('exercise_id')
+          .inFilter('session_id', sessionIds);
+
+      debugPrint('🔍 [getRecentExercises] Got ${(seResponse as List).length} session_exercise rows');
+
+      // Deduplicate exercise IDs (order preserved from sessions query)
+      final exerciseIds = <String>[];
+      final seen = <String>{};
+      for (final item in seResponse) {
+        final exId = item['exercise_id'] as String;
+        if (!seen.contains(exId)) {
+          seen.add(exId);
+          exerciseIds.add(exId);
+          if (exerciseIds.length >= limit) break;
+        }
       }
-    }
 
-    return exerciseSet.values.toList();
+      if (exerciseIds.isEmpty) {
+        debugPrint('🔍 [getRecentExercises] No exercises found');
+        return [];
+      }
+
+      debugPrint('🔍 [getRecentExercises] Found ${exerciseIds.length} unique exercise IDs: $exerciseIds');
+
+      // Step 3: Fetch full exercise details
+      final exercisesResponse = await _client
+          .from('exercises')
+          .select()
+          .inFilter('id', exerciseIds);
+
+      // Map by ID for ordering
+      final exerciseMap = <String, ExerciseModel>{};
+      for (final item in exercisesResponse as List) {
+        final exercise = ExerciseModel.fromJson(item as Map<String, dynamic>);
+        exerciseMap[exercise.id] = exercise;
+      }
+
+      // Return in order
+      final result = exerciseIds
+          .where((id) => exerciseMap.containsKey(id))
+          .map((id) => exerciseMap[id]!)
+          .toList();
+
+      debugPrint('🔍 [getRecentExercises] Returning ${result.length} exercises');
+      return result;
+    } catch (e, stack) {
+      debugPrint('🔴 [getRecentExercises] Error: $e');
+      debugPrint('🔴 [getRecentExercises] Stack: $stack');
+      rethrow;
+    }
   }
 
   /// Get exercise history for a client
@@ -798,6 +852,49 @@ class SessionRemoteDataSource {
     return (response as List)
         .map((json) => ExerciseSetModel.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Get all feedback entries for a session exercise
+  Future<List<SessionExerciseFeedbackModel>> getFeedbackForSessionExercise(
+      String sessionExerciseId) async {
+    final response = await _client
+        .from('session_exercise_feedback')
+        .select()
+        .eq('session_exercise_id', sessionExerciseId)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((e) =>
+            SessionExerciseFeedbackModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Submit trainer feedback for a session exercise
+  Future<void> submitExerciseFeedback(
+      SessionExerciseFeedbackModel feedback) async {
+    await _client
+        .from('session_exercise_feedback')
+        .insert(feedback.toJson());
+  }
+
+  /// Get exercise swap history for a client
+  Future<List<ExerciseSwapHistoryModel>> getSwapHistoryForClient(
+      String clientId) async {
+    final response = await _client
+        .from('exercise_swap_history')
+        .select()
+        .eq('client_id', clientId)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((e) =>
+            ExerciseSwapHistoryModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Log an exercise swap event
+  Future<void> logExerciseSwap(ExerciseSwapHistoryModel swap) async {
+    await _client
+        .from('exercise_swap_history')
+        .insert(swap.toJson());
   }
 
   String _statusToString(SessionStatus status) {
